@@ -1,0 +1,1594 @@
+"use strict";
+const C = Calc,
+  S = Store,
+  $ = (s) => document.querySelector(s),
+  app = $("#app");
+let state,
+  storageError = "",
+  editingDay = null,
+  editingTrade = null;
+try {
+  state = S.load();
+} catch (e) {
+  state = C.defaults();
+  storageError =
+    e.message +
+    " — ข้อมูลเดิมไม่ได้ถูกเขียนทับ โปรด Export ข้อมูลเดิมก่อน Restore";
+}
+const esc = (v) =>
+  String(v ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+const money = (v) =>
+  v === null
+    ? "N/A"
+    : new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 2,
+      }).format(v);
+const pct = (v) => (v === null ? "N/A" : Number(v).toFixed(2) + "%");
+const num = (v) => (v === null ? "—" : Number(v).toFixed(2));
+const today = () => C.dateInZone(new Date());
+const fmtTime = (iso) =>
+  new Intl.DateTimeFormat("th-TH", {
+    timeZone: state.account.timezone,
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(iso));
+const labels = {
+  dashboard: "ภาพรวมบัญชี",
+  daily: "บันทึกรายวัน",
+  trades: "Trade Log",
+  planner: "Next Trade Planner",
+  weekly: "Weekly Review",
+  settings: "Account & Rules",
+  explained: "FTMO Rules Explained",
+  sources: "Official Sources",
+};
+function toast(text, error = false) {
+  const el = $("#toast");
+  el.textContent = text;
+  el.className = error ? "error" : "";
+  el.style.display = "block";
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (el.style.display = "none"), 6000);
+}
+function commit(next) {
+  if (storageError)
+    throw Error(
+      "ข้อมูลเดิมอ่านไม่ได้ กรุณา Backup ข้อมูลเดิมและใช้ Import หรือ Reset ก่อนบันทึก",
+    );
+  S.save(next);
+  state = next;
+  document.body.classList.toggle("light", state.theme === "light");
+}
+function clone() {
+  return structuredClone(state);
+}
+function field(
+  label,
+  name,
+  value = "",
+  type = "number",
+  help = "",
+  extra = "",
+) {
+  return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" value="${esc(value ?? "")}" ${type === "number" && !extra.includes("step=") ? 'step="any"' : ""} ${extra}><small>${help}</small></label>`;
+}
+function select(label, name, value, options) {
+  return `<label class="field"><span>${label}</span><select name="${name}">${options
+    .map((o) => {
+      const [v, l] = Array.isArray(o) ? o : [o, o];
+      return `<option value="${esc(v)}" ${v === value ? "selected" : ""}>${esc(l)}</option>`;
+    })
+    .join("")}</select></label>`;
+}
+function check(label, name, value = false) {
+  return `<label class="check"><input name="${name}" type="checkbox" ${value ? "checked" : ""}>${label}</label>`;
+}
+function area(label, name, value = "") {
+  return `<label class="field wide"><span>${label}</span><textarea name="${name}" maxlength="10000">${esc(value)}</textarea></label>`;
+}
+function head(title, description, side = "") {
+  return `<div class="page-head"><div><div class="eyebrow">RISK & OBJECTIVE TRACKER</div><h1>${title}</h1><p>${description}</p></div>${side}</div>`;
+}
+function progress(v, bad = false) {
+  return `<div class="progress ${bad ? "bad" : v >= 80 ? "warn" : ""}"><i style="width:${Math.max(0, Math.min(100, v || 0))}%"></i></div>`;
+}
+function card(label, value, detail = "", valuePercent = null, bad = false) {
+  return `<div class="card"><div class="card-label">${label}</div><div class="card-value ${bad ? "negative" : ""}">${value}</div>${detail ? `<div class="card-detail">${detail}</div>` : ""}${valuePercent !== null ? progress(valuePercent, bad) : ""}</div>`;
+}
+function summary(items) {
+  return `<div class="summary-list">${items.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("")}</div>`;
+}
+function warnings(s) {
+  return (
+    (!s.fresh
+      ? `<div class="notice bad">ยังไม่มีข้อมูลของวันนี้ (${today()} CE(S)T) ${state.daily.length ? "กำลังแสดงข้อมูลล่าสุด " + s.d.date : ""} · บันทึก Midnight Balance และ Equity ก่อนวางแผน Trade</div>`
+      : "") +
+    (!s.coverage
+      ? '<div class="notice">ข้อมูลนี้ไม่สามารถยืนยันว่าไม่เคยผิด FTMO Loss Rule ระหว่างวันได้ เพราะไม่มี Lowest Intraday Equity ครบทุกวันที่บันทึก</div>'
+      : "") +
+    (s.violation
+      ? '<div class="notice bad">พบ FTMO Rule Violation ในประวัติ · Equity ฟื้นตัวหรือแก้ไขข้อมูลไม่ล้าง Violation ที่ตรวจพบแล้ว ตรวจรายละเอียดด้านล่าง</div>'
+      : "")
+  );
+}
+function dashboard() {
+  const s = C.snapshot(state),
+    p = s.profit,
+    t = state.rules.tony;
+  return (
+    head(
+      esc(state.account.name),
+      `${esc(state.account.phase)} · Initial simulated capital ${money(s.initial)}`,
+      `<div class="reset-time"><span class="badge ${s.ftmoStatus === "RULE VIOLATION" ? "RULE" : s.ftmoStatus}">${s.ftmoStatus}</span><p>FTMO reset วันนี้: ${fmtTime(C.resetInstant(today()))}<br>${esc(state.account.timezone)} · 00:00 Europe/Prague</p></div>`,
+    ) +
+    warnings(s) +
+    `<div class="metrics">${[
+      ["Current Balance", money(s.balance)],
+      ["Current Equity", money(s.equity)],
+      ["Equity − Balance", money(s.equity - s.balance)],
+      ["Peak Equity", money(s.peak)],
+      [
+        "Closed P/L",
+        money(p.profit) + " <small>" + pct(p.profitPercent) + "</small>",
+      ],
+    ]
+      .map(
+        ([l, v]) =>
+          `<div><div class="metric-label" title="${l === "Current Balance" ? "Closed trades net balance" : l === "Current Equity" ? "Balance + open-position net P/L (รวมต้นทุนที่ยังไม่อยู่ใน Balance)" : ""}">${l}</div><div class="metric-value">${v}</div></div>`,
+      )
+      .join("")}</div><div class="grid four">` +
+    card(
+      "Profit Target",
+      p.targetAmount === null
+        ? "N/A"
+        : money(p.profit) + " <small>/ " + money(p.targetAmount) + "</small>",
+      p.targetAmount === null
+        ? "FTMO Account ไม่มี Target"
+        : `<span>${pct(p.progress)} completed</span><span>เหลือ ${money(p.remaining)}</span>`,
+      p.progress,
+    ) +
+    card(
+      "Trading Days",
+      s.rule.days === null
+        ? "N/A"
+        : `${s.tradingDays} <small>/ ${s.rule.days} วัน</small>`,
+      `Unique CE(S)T opening dates`,
+      s.rule.days ? (s.tradingDays / s.rule.days) * 100 : null,
+    ) +
+    card(
+      "FTMO Daily Loss Usage",
+      pct(s.dailyUsed),
+      `<span>Used ${money(Math.max(0, s.d.midnight - s.equity))}</span><span>/ ${money(s.dailyAmount)}</span>`,
+      s.dailyUsed,
+      s.dailyViolation,
+    ) +
+    card(
+      "FTMO Maximum Loss Usage",
+      pct(s.maxUsed),
+      `<span>Used ${money(Math.max(0, s.initial - s.equity))}</span><span>/ ${money(s.maxAmount)}</span>`,
+      s.maxUsed,
+      s.maxViolation,
+    ) +
+    card(
+      "Daily Loss Buffer",
+      money(s.dailyBuffer),
+      `Daily Floor ${money(s.floor)}`,
+      null,
+      s.dailyBuffer <= 0,
+    ) +
+    card(
+      "Maximum Loss Buffer",
+      money(s.maxBuffer),
+      `Static Floor ${money(s.maxFloor)}`,
+      null,
+      s.maxBuffer <= 0,
+    ) +
+    card("Current Drawdown", pct(s.initialDD), "Equity vs Initial Capital") +
+    card(
+      "Peak Drawdown",
+      pct(s.peakDD),
+      "Performance Metric · ไม่ใช่ FTMO Maximum Loss",
+    ) +
+    `</div><div class="panel decision ${s.internal.level}"><div><div class="eyebrow">TODAY’S STATUS</div><h2>${esc(s.internal.decision)}</h2><p>${s.internal.reasons.map(esc).join(" · ") || "ยึดแผนการเทรด รอ A / A+ Setup · ไม่ใช่คำแนะนำทิศทางตลาด"}</p></div><div><span class="badge ${s.internal.level}">TONY ${s.internal.level}</span><p>Risk สูงสุด ${pct(s.internal.maxRisk)} / ${money((s.initial * s.internal.maxRisk) / 100)}</p><a href="#planner">ตรวจ Next Trade Buffer →</a></div></div><div class="grid two"><div class="panel"><h2>Tony Drawdown Protection</h2>${summary(
+      [
+        ["Equity vs Initial", pct(((s.equity - s.initial) / s.initial) * 100)],
+        ["Peak Drawdown", pct(s.peakDD)],
+        [
+          "Risk Used Today",
+          money(s.stats.risk) + " / " + pct(s.stats.riskPercent),
+        ],
+        ["Trades Today", s.stats.count + " / " + t.trades],
+        ["Consecutive Losses (สูงสุดวันนี้)", s.stats.lossStreak],
+        ["ลด Risk ที่ Drawdown", pct(t.reduce)],
+        ["พัก 1 trading day / Review 10 trades", pct(t.pause)],
+        ["Full Review Required", pct(t.review)],
+      ],
+    )}<p class="muted">ใช้เกณฑ์ที่เข้มกว่าระหว่าง Drawdown จาก Initial และ Peak · No Martingale / No Averaging Loss / No Revenge Trading / No increasing Lot after Loss</p></div><div class="panel"><h2>Daily Planning Summary</h2>${summary(
+      [
+        ["FTMO Status", s.ftmoStatus],
+        ["Lowest Equity Today", money(s.d.lowest)],
+        ["Lowest Equity Since Start", money(s.low)],
+        ["Current Target Progress", pct(p.progress)],
+        ["All Positions Closed?", s.closed ? "Yes" : "No"],
+        [
+          "Tomorrow Maximum Risk",
+          pct(s.internal.maxRisk) +
+            " / " +
+            money((s.initial * s.internal.maxRisk) / 100),
+        ],
+        ["Maximum Trades", t.trades],
+        [
+          "Recommended Action",
+          s.internal.level === "STOP"
+            ? "STOP / REVIEW"
+            : "WAIT FOR A OR A+ SETUP",
+        ],
+      ],
+    )}<p class="muted">Risk วันถัดไปเป็นเพดานจากสถานะล่าสุด ต้องกรอกข้อมูลหลัง Reset ใหม่ก่อนเทรด</p>${p.reached && !s.closed ? '<div class="notice">Target reached numerically but cannot confirm PASS until all positions are closed</div>' : ""}${p.reached && s.tradingDays < (s.rule.days || 0) ? '<div class="notice">Target ถึงแล้ว แต่ Minimum Trading Days ยังไม่ครบ</div>' : ""}</div></div><div class="section-head"><h2>Account Performance</h2><span class="muted">จาก Daily Entries ที่บันทึก</span></div><div class="grid two charts">${charts()}</div>${
+      s.events.length
+        ? `<div class="panel"><h2>Violation History</h2>${table(
+            ["CE(S)T Date", "FTMO Daily", "FTMO Maximum", "Manual"],
+            s.events.map((e) => [
+              e.date,
+              e.daily ? "VIOLATED" : "—",
+              e.max ? "VIOLATED" : "—",
+              e.manual ? "Flagged" : "—",
+            ]),
+          )}</div>`
+        : ""
+    }<div class="actions"><button data-action="demo">โหลด Demo $100K</button><button data-action="csv-daily">Export Daily CSV</button><a href="#daily">บันทึกวันนี้ →</a></div>`
+  );
+}
+function table(headers, rows) {
+  return `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.length ? rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("") : `<tr><td colspan="${headers.length}" class="empty">ยังไม่มีข้อมูล</td></tr>`}</tbody></table></div>`;
+}
+function chart(title, series, dates) {
+  if (!dates.length)
+    return `<div class="panel"><h2>${title}</h2><div class="empty">บันทึกข้อมูลเพื่อเริ่มแสดงกราฟ</div></div>`;
+  const vals = series.flatMap((s) => s.values).filter(Number.isFinite);
+  let lo = Math.min(...vals),
+    hi = Math.max(...vals),
+    pad = (hi - lo) * 0.12 || Math.max(1, Math.abs(hi) * 0.01);
+  lo -= pad;
+  hi += pad;
+  const x = (i) => 52 + (i * 540) / Math.max(1, dates.length - 1),
+    y = (v) => 175 - ((v - lo) / (hi - lo)) * 145;
+  return `<div class="panel"><h2>${title}</h2><div class="legend">${series.map((s) => `<span><i class="dot" style="background:${s.color}"></i>${s.name}</span>`).join("")}</div><svg viewBox="0 0 620 205" role="img" aria-label="${title}">${[
+    0, 0.5, 1,
+  ]
+    .map((v) => {
+      let value = lo + (hi - lo) * v;
+      return `<line x1="52" x2="592" y1="${y(value)}" y2="${y(value)}" stroke="var(--line)"/><text x="0" y="${y(value) + 4}" fill="var(--muted)" font-size="9">${Math.round(value).toLocaleString("en")}</text>`;
+    })
+    .join(
+      "",
+    )}${series.map((s) => `<polyline fill="none" stroke="${s.color}" stroke-width="2" ${s.dash ? 'stroke-dasharray="5 5"' : ""} points="${s.values.map((v, i) => `${x(i)},${y(v)}`).join(" ")}"/>${s.values.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3" fill="${s.color}"><title>${esc(dates[i])}: ${num(v)} · ${esc(s.name)}</title></circle>`).join("")}`).join("")}<text x="52" y="200" fill="var(--muted)" font-size="10">${esc(dates[0])}</text><text x="592" text-anchor="end" y="200" fill="var(--muted)" font-size="10">${esc(dates.at(-1))}</text></svg></div>`;
+}
+function charts() {
+  const ds = [...state.daily].sort((a, b) => a.date.localeCompare(b.date)),
+    dates = ds.map((d) => d.date),
+    snaps = ds.map((d) => C.snapshot(state, d.date));
+  return (
+    chart(
+      "Equity & Balance Curve",
+      [
+        { name: "Equity", color: "var(--accent)", values: ds.map(C.equityOf) },
+        { name: "Balance", color: "#7faee8", values: ds.map((d) => d.balance) },
+        {
+          name: "Maximum Loss Floor",
+          color: "var(--red)",
+          dash: true,
+          values: snaps.map((s) => s.maxFloor),
+        },
+        {
+          name: "Daily Loss Floor",
+          color: "var(--yellow)",
+          dash: true,
+          values: snaps.map((s) => s.floor),
+        },
+      ],
+      dates,
+    ) +
+    chart(
+      "Drawdown %",
+      [
+        {
+          name: "Peak DD",
+          color: "var(--orange)",
+          values: snaps.map((s) => s.peakDD),
+        },
+        {
+          name: "Initial DD",
+          color: "var(--red)",
+          values: snaps.map((s) => s.initialDD),
+        },
+      ],
+      dates,
+    ) +
+    chart(
+      "Profit Target Progress %",
+      [
+        {
+          name: "Progress",
+          color: "var(--accent)",
+          values: snaps.map((s) => s.profit.progress ?? 0),
+        },
+      ],
+      dates,
+    ) +
+    chart(
+      "Daily Realised P/L $",
+      [
+        {
+          name: "Net closed P/L ที่กรอก",
+          color: "#7faee8",
+          values: ds.map((d) => d.realised),
+        },
+      ],
+      dates,
+    ) +
+    chart(
+      "Risk % per Trade",
+      [
+        {
+          name: "Risk / Initial",
+          color: "var(--yellow)",
+          values: state.trades.map(
+            (t) => (t.risk / state.account.initial) * 100,
+          ),
+        },
+      ],
+      state.trades.map((t) => C.dateInZone(t.open)),
+    ) +
+    chart(
+      "Daily Risk %",
+      [
+        {
+          name: "Risk Used",
+          color: "var(--accent)",
+          values: snaps.map((s) => s.stats.riskPercent),
+        },
+      ],
+      dates,
+    )
+  );
+}
+function blankDay() {
+  const s = C.snapshot(state);
+  return {
+    date: today(),
+    midnight: s.balance,
+    starting: s.balance,
+    balance: s.balance,
+    equity: s.equity,
+    lowest: null,
+    peak: null,
+    mode: "manual",
+    floating: 0,
+    realised: 0,
+    commission: 0,
+    swap: 0,
+    trades: 0,
+    wins: 0,
+    losses: 0,
+    consecutive: 0,
+    risk: 0,
+    opened: false,
+    closed: true,
+    notes: "",
+    emotion: "",
+    violationNotes: "",
+    internalViolation: false,
+    manualViolation: false,
+    reviewed: false,
+    dailyViolation: false,
+    maxViolation: false,
+  };
+}
+function daily() {
+  const d =
+    state.daily.find((x) => x.date === (editingDay || today())) || blankDay();
+  return (
+    head(
+      "บันทึกรายวัน",
+      "Date = วัน FTMO ตาม CE(S)T · 1 รายการต่อวัน · แก้ไขได้โดยคง Lowest และ Violation เดิม",
+    ) +
+    `<div class="notice">Midnight Balance ต้องมาจาก Balance จริง ณ 00:00 Europe/Prague ไม่ใช่ Equity · ค่าที่เติมให้อัตโนมัติเป็นค่าเสนอจากข้อมูลล่าสุด โปรดตรวจสอบก่อนบันทึก</div><form id="daily-form" class="panel"><h2>${editingDay ? "แก้ไข " + editingDay : "Daily Entry"}</h2><div class="form-grid">` +
+    field(
+      "FTMO Date (CE(S)T)",
+      "date",
+      d.date,
+      "date",
+      "",
+      `required min="${state.account.startDate}" max="${today()}"`,
+    ) +
+    field(
+      "Balance at 00:00 CE(S)T $",
+      "midnight",
+      d.midnight,
+      "number",
+      "ใช้ Balance ไม่ใช่ Equity",
+      "required",
+    ) +
+    field(
+      "Starting Balance $",
+      "starting",
+      d.starting,
+      "number",
+      "",
+      "required",
+    ) +
+    field(
+      "Current / Closing Balance $",
+      "balance",
+      d.balance,
+      "number",
+      "Net ของ Closed Trades รวมต้นทุนที่ลง Balance แล้ว",
+      "required",
+    ) +
+    select("Equity Mode", "mode", d.mode, [
+      ["manual", "Manual Equity — กรอกยอดจริง"],
+      ["calculate", "Calculate Equity — คำนวณจาก Open Positions"],
+    ]) +
+    field(
+      "Current Equity $",
+      "equity",
+      d.equity,
+      "number",
+      "Manual = Equity จริงจาก MT5",
+      "required",
+    ) +
+    field(
+      "Floating P/L $",
+      "floating",
+      d.floating,
+      "number",
+      "เฉพาะ Open Positions ก่อน Swap/Commission",
+      "required",
+    ) +
+    field(
+      "Commission $ (Open / ยังไม่อยู่ใน Balance)",
+      "commission",
+      d.commission,
+      "number",
+      "ถ้ารวมใน Balance หรือ Floating แล้ว ให้กรอก 0",
+      'required min="0"',
+    ) +
+    field(
+      "Swap $ (Open / ยังไม่อยู่ใน Balance)",
+      "swap",
+      d.swap,
+      "number",
+      "กำไรเป็นบวก / ต้นทุนเป็นลบ; ห้ามนับซ้ำ",
+      "required",
+    ) +
+    field(
+      "Lowest Equity Today $",
+      "lowest",
+      d.lowest,
+      "number",
+      "เว้นว่างได้ แต่ไม่สามารถยืนยัน Intraday Rule ได้",
+    ) +
+    field(
+      "Highest Equity Today $",
+      "peak",
+      d.peak,
+      "number",
+      "ยอด Peak ที่สังเกตระหว่างวัน (ถ้าทราบ)",
+    ) +
+    field(
+      "Realised Net P/L Today $",
+      "realised",
+      d.realised,
+      "number",
+      "รวมต้นทุน Closed Trades แล้ว · ไม่ใช้บวก Balance ซ้ำ",
+      "required",
+    ) +
+    field(
+      "Number of Trades Opened",
+      "trades",
+      d.trades,
+      "number",
+      "",
+      'required min="0" step="1"',
+    ) +
+    field(
+      "Winning Trades",
+      "wins",
+      d.wins,
+      "number",
+      "",
+      'required min="0" step="1"',
+    ) +
+    field(
+      "Losing Trades",
+      "losses",
+      d.losses,
+      "number",
+      "",
+      'required min="0" step="1"',
+    ) +
+    field(
+      "Consecutive Losses (สูงสุดวันนี้)",
+      "consecutive",
+      d.consecutive,
+      "number",
+      "ใช้เมื่อไม่มี Trade Log ละเอียด",
+      'required min="0" step="1"',
+    ) +
+    field(
+      "Risk $ Used Today",
+      "risk",
+      d.risk,
+      "number",
+      "Risk = ผลรวม Risk ที่เปิดวันนี้ ไม่ใช่ P/L",
+      'required min="0"',
+    ) +
+    field(
+      "Risk % Used Today",
+      "riskPercent",
+      (d.risk / state.account.initial) * 100,
+      "number",
+      "ผูกกับ Risk $ / Initial Capital",
+      'min="0"',
+    ) +
+    `<div class="field wide"><span id="equity-preview"></span></div>` +
+    check("Opened New Position Today?", "opened", d.opened) +
+    check("All Positions Closed?", "closed", d.closed) +
+    check(
+      "Tony Rule Violation (Martingale / Averaging / Revenge / เพิ่ม Lot)",
+      "internalViolation",
+      d.internalViolation,
+    ) +
+    check("Manual FTMO Violation Flag", "manualViolation", d.manualViolation) +
+    check(
+      "Review 10 trades ล่าสุดแล้ว / วันพักที่ไม่มี Trade",
+      "reviewed",
+      d.reviewed,
+    ) +
+    area("Notes", "notes", d.notes) +
+    area("Emotion / Psychology Notes", "emotion", d.emotion) +
+    area(
+      "Rule Violation Notes (Auto Detect + Manual)",
+      "violationNotes",
+      d.violationNotes,
+    ) +
+    `</div><div class="actions"><button class="primary">บันทึก Daily Entry</button><button type="button" data-action="cancel-day">ยกเลิกการแก้ไข</button></div></form><div class="panel"><div class="section-head"><h2>Daily History</h2><button data-action="csv-daily">Export CSV</button></div>${table(
+      [
+        "Date CE(S)T",
+        "Balance",
+        "Equity",
+        "Lowest",
+        "Realised P/L",
+        "FTMO",
+        "จัดการ",
+      ],
+      [...state.daily]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map((d) => [
+          d.date,
+          money(d.balance),
+          money(C.equityOf(d)),
+          money(d.lowest),
+          money(d.realised),
+          C.snapshot(state, d.date).ftmoStatus,
+          `<button data-edit-day="${d.date}">แก้ไข</button> <button class="danger" data-delete-day="${d.date}">ลบ</button>`,
+        ]),
+    )}</div>`
+  );
+}
+function localInput(iso) {
+  const p = new Intl.DateTimeFormat("en-GB", {
+      timeZone: state.account.timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(iso)),
+    g = (t) => p.find((x) => x.type === t).value;
+  return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
+}
+function trades() {
+  const t = state.trades.find((t) => t.id === editingTrade) || {
+    id: "T-" + Date.now(),
+    open: new Date().toISOString(),
+    close: null,
+    symbol: "",
+    side: "Buy",
+    grade: "A",
+    entry: 0,
+    sl: 0,
+    tp: 0,
+    lot: 0,
+    risk: state.account.initial * 0.0025,
+    pnl: 0,
+    commission: 0,
+    swap: 0,
+    followed: true,
+    violation: false,
+    notes: "",
+  };
+  return (
+    head(
+      "Trade Log",
+      "บันทึกข้อมูลที่เกิดขึ้นจริง · Buy / Sell เป็นข้อมูลบันทึก ไม่ใช่ Signal",
+    ) +
+    `<div class="notice">Open / Close Time กรอกตาม ${esc(state.account.timezone)} · ระบบแปลงเป็น CE(S)T เพื่อนับ Trading Days โดยอัตโนมัติ · Trade Log ไม่แก้ Balance/Equity ให้เอง ต้องยืนยัน Daily Entry</div><form id="trade-form" class="panel"><h2>${editingTrade ? "แก้ไข Trade" : "เพิ่ม Trade"}</h2><div class="form-grid">` +
+    field("Trade ID", "id", t.id, "text", "", 'required maxlength="100"') +
+    field(
+      "Open Date / Time",
+      "open",
+      localInput(t.open),
+      "datetime-local",
+      "",
+      "required",
+    ) +
+    field(
+      "Close Date / Time",
+      "close",
+      t.close ? localInput(t.close) : "",
+      "datetime-local",
+      "เว้นว่าง = Position ยังเปิดอยู่",
+    ) +
+    field(
+      "Symbol",
+      "symbol",
+      t.symbol,
+      "text",
+      "",
+      'required maxlength="100"',
+    ) +
+    select("Side", "side", t.side, ["Buy", "Sell"]) +
+    select("Setup Grade", "grade", t.grade, ["A+", "A", "B", "No Trade"]) +
+    field("Entry", "entry", t.entry, "number", "", "required") +
+    field("Stop Loss", "sl", t.sl, "number", "", "required") +
+    field("Take Profit", "tp", t.tp, "number", "", "required") +
+    field("Lot Size", "lot", t.lot, "number", "", 'required min="0"') +
+    field("Risk $", "risk", t.risk, "number", "", 'required min="0"') +
+    field(
+      "Risk % / Initial",
+      "riskPercent",
+      (t.risk / state.account.initial) * 100,
+      "number",
+      "",
+      'min="0"',
+    ) +
+    field(
+      "Gross Profit / Loss $",
+      "pnl",
+      t.pnl,
+      "number",
+      "ก่อน Commission / Swap; ยังเปิดอยู่ไม่รวม Weekly closed P/L",
+      "required",
+    ) +
+    field(
+      "Commission $",
+      "commission",
+      t.commission,
+      "number",
+      "ต้นทุนเป็นค่าบวก",
+      'required min="0"',
+    ) +
+    field("Swap $", "swap", t.swap, "number", "ต้นทุนเป็นลบ", "required") +
+    field(
+      "Result in R (Net)",
+      "resultR",
+      t.risk > 0 ? C.netTrade(t) / t.risk : "",
+      "number",
+      "คำนวณจาก (P/L + Swap − Commission) / Risk",
+      "readonly",
+    ) +
+    check("Followed Plan?", "followed", t.followed) +
+    check("Rule Violation?", "violation", t.violation) +
+    area("Notes", "notes", t.notes) +
+    `</div><div class="actions"><button class="primary">บันทึก Trade</button><button type="button" data-action="cancel-trade">ยกเลิกการแก้ไข</button></div></form><div class="panel"><div class="section-head"><h2>Trades</h2><button data-action="csv-trades">Export CSV</button></div>${table(
+      [
+        "ID",
+        "FTMO Open Date",
+        "Symbol / Side",
+        "Setup",
+        "Status",
+        "Risk",
+        "Net P/L",
+        "R",
+        "Plan",
+        "จัดการ",
+      ],
+      [...state.trades]
+        .sort((a, b) => b.open.localeCompare(a.open))
+        .map((t) => [
+          esc(t.id),
+          C.dateInZone(t.open),
+          esc(t.symbol) + " / " + t.side,
+          t.grade,
+          t.close ? "Closed" : "Open",
+          money(t.risk),
+          money(C.netTrade(t)),
+          t.risk > 0 ? num(C.netTrade(t) / t.risk) : "N/A",
+          t.followed && !t.violation ? "Yes" : "Violation",
+          `<button data-edit-trade="${esc(t.id)}">แก้ไข</button> <button class="danger" data-delete-trade="${esc(t.id)}">ลบ</button>`,
+        ]),
+    )}</div>`
+  );
+}
+function planner() {
+  const s = C.snapshot(state);
+  return (
+    head(
+      "Next Trade Risk Planner",
+      "จำลองผลหาก Stop Loss ถูกชน · Rule / Buffer Calculator เท่านั้น",
+    ) +
+    warnings(s) +
+    `<div class="notice">ตรวจสอบ Tick Value และ Contract Specification จาก MT5 ก่อนเปิด Order · ไม่ Assume Tick Value ของ XAUUSD · Lot Step ต้องตรงกับ Symbol / Broker</div><div class="grid two"><form id="planner-form" class="panel"><h2>Proposed Risk</h2><div class="form-grid">` +
+    select("Setup Grade", "grade", "A", ["A+", "A", "B", "No Trade"]) +
+    field("Current Balance $", "balance", s.balance, "number", "", "required") +
+    field(
+      "Current Equity $",
+      "equity",
+      s.equity,
+      "number",
+      "ค่าที่เปลี่ยนเป็น Simulation ต้องบันทึก Daily Entry ก่อนยืนยัน",
+      "required",
+    ) +
+    field(
+      "Stop Loss Distance (Price Units)",
+      "distance",
+      "",
+      "number",
+      "เช่น Price ต่างกัน 3.00 ไม่ใช่จำนวน Points",
+      'required min="0.00000001"',
+    ) +
+    field(
+      "Tick Size (MT5)",
+      "tickSize",
+      "",
+      "number",
+      "",
+      'required min="0.00000001"',
+    ) +
+    field(
+      "Tick Value $ / 1 lot (MT5)",
+      "tickValue",
+      "",
+      "number",
+      "ใช้ค่าใน USD / Account Currency",
+      'required min="0.00000001"',
+    ) +
+    field(
+      "Risk % / Initial Capital",
+      "riskPercent",
+      Math.min(state.rules.tony.riskA, state.rules.tony.maxRisk),
+      "number",
+      "",
+      'required min="0"',
+    ) +
+    field(
+      "Lot Step / Minimum Lot",
+      "lotStep",
+      0.01,
+      "number",
+      "ปัด Lot ลงเสมอ; ตรวจสอบ MT5",
+      'required min="0.00000001"',
+    ) +
+    field(
+      "Extra Cost / Slippage Reserve $",
+      "cost",
+      0,
+      "number",
+      "เผื่อ Commission / Swap / Slippage ของ Trade ใหม่",
+      'required min="0"',
+    ) +
+    `</div></form><div id="projection" class="panel" aria-live="polite"></div></div><div class="panel"><h2>Position Size Formula</h2><div class="formula">Risk $ = Initial Capital × Risk % / 100<br>Lot Size = Risk $ ÷ (Stop Loss Distance ÷ Tick Size × Tick Value)<br>Projected Equity = Current Equity − Risk $ − Extra Cost Reserve</div><p class="muted">เป็นการจำลอง ไม่รับประกันราคา Fill หรือ Slippage · การปัดลงลด Risk แต่ Buffer ใช้ Risk ที่เสนอเต็มจำนวนเพื่อความระมัดระวัง · หากชน Tony Stop แสดง DO NOT TRADE แม้ยังไม่ชน FTMO Floor</p></div>`
+  );
+}
+function updateProjection() {
+  const f = $("#planner-form");
+  if (!f) return;
+  const data = new FormData(f);
+  const get = (k) => Number(data.get(k));
+  const s = C.snapshot(state),
+    p = C.calculateNextTradeProjection(s, {
+      grade: data.get("grade"),
+      riskPercent: get("riskPercent"),
+      distance: get("distance"),
+      tickSize: get("tickSize"),
+      tickValue: get("tickValue"),
+      lotStep: get("lotStep"),
+      cost: get("cost"),
+      balance: get("balance"),
+      equity: get("equity"),
+    });
+  const invalid = [...f.querySelectorAll("input")].some(
+    (i) => !i.validity.valid,
+  );
+  if (invalid) {
+    p.allowed = false;
+    p.reasons.push("กรอกค่าตัวเลขที่จำเป็นให้ครบและไม่ติดลบ");
+  }
+  $("#projection").innerHTML =
+    `<div class="eyebrow">PROJECTED IF STOP LOSS HIT</div><h2 class="${p.allowed ? "positive" : "negative"}">${p.allowed ? "WITHIN RISK PLAN" : "DO NOT TRADE"}</h2><p class="${p.allowed ? "muted" : "negative"}">${p.reasons.map(esc).join(" · ") || "Buffer อยู่ในกฎที่ตั้งไว้ ตรวจสอบ Contract และแผนก่อนส่ง Order"}</p>${summary(
+      [
+        ["Risk Proposed", money(p.amount)],
+        [
+          "Position Size (lot, ปัดลง)",
+          p.lots === null ? "—" : p.lots.toFixed(6),
+        ],
+        ["Current Equity", money(s.equity)],
+        ["Daily Loss Floor", money(s.floor)],
+        ["Remaining Daily Buffer", money(s.dailyBuffer)],
+        ["Maximum Loss Floor", money(s.maxFloor)],
+        ["Remaining Maximum Buffer", money(s.maxBuffer)],
+        ["Tony Daily Stop Remaining", money(p.tonyRemaining)],
+        ["Projected Equity", money(p.projected)],
+        ["Projected Daily Buffer", money(p.dailyBuffer)],
+        ["Projected Maximum Buffer", money(p.maxBuffer)],
+        ["Projected Daily Loss / Initial", pct(p.dailyPercent)],
+        ["Projected Total Loss / Initial", pct(p.totalPercent)],
+        ["Maximum Risk for Setup", pct(p.limit)],
+      ],
+    )}`;
+}
+function weekly() {
+  const end = today(),
+    start = new Date(end + "T12:00:00Z");
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+  return (
+    head(
+      "Weekly Review",
+      "สรุปตามวัน CE(S)T · Closed-trade results แยกจาก Daily Entries เพื่อไม่ Double Count",
+    ) +
+    `<form id="week-form" class="panel inline-form">${field("จากวันที่", "from", start.toISOString().slice(0, 10), "date", "", "required")}${field("ถึงวันที่", "to", end, "date", "", "required")}<button class="primary">แสดง Review</button></form><div id="week-result"></div>`
+  );
+}
+function updateWeek() {
+  const f = $("#week-form");
+  if (!f) return;
+  const from = f.elements.from.value,
+    to = f.elements.to.value;
+  if (from > to) {
+    toast("วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด", true);
+    return;
+  }
+  const w = C.weeklyReview(state, from, to);
+  $("#week-result").innerHTML =
+    `<div class="grid four">${card("Total Closed Trades", w.count, "Opened " + w.opened)}${card("Win Rate", pct(w.winRate), `${w.wins} Wins · ${w.losses} Losses`)}${card("Net Closed P/L", money(w.net), pct(w.netPercent), null, w.net < 0)}${card("Net R", num(w.netR), "Average R " + num(w.avgR))}</div><div class="panel" style="margin-top:20px"><h2>Weekly Process & Risk</h2>${summary(
+      [
+        ["Average Risk % (Trades Opened)", pct(w.avgRisk)],
+        ["Maximum Intraday Peak DD", pct(w.maxDD)],
+        ["Lowest Equity (ที่บันทึก)", money(w.lowest)],
+        ["Best Setup (Net $)", w.best],
+        ["Recorded Violations (วัน FTMO + Trades)", w.violations],
+        ["No-Trade Days (ที่บันทึก)", w.noTrade],
+        ["Unique Trading Days", w.days],
+        ["Profit Target Progress ณ วันสิ้นสุด", pct(w.progress)],
+        ["Daily Realised P/L (กรอกแยก)", money(w.manualNet)],
+      ],
+    )}<p class="muted">${w.count ? "ผลสรุป Trade ใช้ Closed Trades ในช่วงที่เลือก" : "ยังไม่มี Closed Trade Log ในช่วงนี้: จำนวน Wins / Losses / R จาก Trade Log ยังไม่สามารถสรุปได้"} · Daily และ Trade Log ไม่ถูกรวมซ้ำ</p>${table(
+      ["Setup", "Closed Trades", "Net P/L"],
+      w.setup.map((s) => [s.grade, s.count, money(s.net)]),
+    )}</div>`;
+}
+function settings() {
+  const a = state.account,
+    r = state.rules,
+    t = r.tony;
+  return (
+    head(
+      "Account & Rules",
+      "ปรับกฎได้ตาม FTMO Official · เปลี่ยนทุน / Phase / Start Date ของบัญชีที่มีประวัติ ให้เริ่มรอบใหม่ก่อน",
+    ) +
+    `<div class="notice">ควรตรวจสอบกฎล่าสุดจาก FTMO Official Source ก่อนใช้กับบัญชีจริง · วันที่เริ่มต้น 09-Oct-2026 เป็นค่าที่ผู้ใช้กำหนด ไม่ใช่การรับรองว่าได้ตรวจแหล่งข้อมูลแล้ว</div><form id="settings-form"><div class="panel"><h2>Account Configuration</h2><div class="form-grid">` +
+    field(
+      "Account Name",
+      "name",
+      a.name,
+      "text",
+      "",
+      'required maxlength="200"',
+    ) +
+    select("Account Type", "type", a.type, ["FTMO 2-Step"]) +
+    field(
+      "Initial Simulated Capital USD",
+      "initial",
+      a.initial,
+      "number",
+      "",
+      'required min="1"',
+    ) +
+    select("Evaluation Phase", "phase", a.phase, C.PHASES) +
+    field("Start Date", "startDate", a.startDate, "date", "", "required") +
+    field(
+      "Local Timezone (IANA)",
+      "timezone",
+      a.timezone,
+      "text",
+      "เช่น Asia/Bangkok · FTMO Reset ใช้ Europe/Prague เสมอ",
+      "required",
+    ) +
+    field(
+      "Rules Last Verified Date",
+      "verified",
+      r.verified,
+      "date",
+      "",
+      "required",
+    ) +
+    `</div></div><div class="panel"><h2>FTMO 2-Step Rules</h2><div class="grid two">${C.PHASES.map((p, i) => `<div><h3>${p}</h3><div class="form-grid">${p === "FTMO Account" ? '<p class="muted wide">Profit Target / Minimum Days = N/A</p>' : field("Profit Target %", `p${i}target`, r.phases[p].target, "number", "", 'required min="0.01"') + field("Minimum Trading Days", `p${i}days`, r.phases[p].days, "number", "", 'required min="0" step="1"')}${field("Maximum Daily Loss %", `p${i}daily`, r.phases[p].daily, "number", "", 'required min="0.01" max="99.99"')}${field("Maximum Loss % (Static)", `p${i}max`, r.phases[p].max, "number", "", 'required min="0.01" max="99.99"')}</div></div>`).join("")}</div></div><div class="panel"><h2>Tony Internal Rules</h2><div class="form-grid">` +
+    [
+      ["riskA", "A Setup Risk %"],
+      ["riskPlus", "A+ Setup Maximum %"],
+      ["maxRisk", "Maximum Risk Per Trade %"],
+      ["trades", "Maximum Trades Per Day"],
+      ["losses", "Consecutive Losses → STOP"],
+      ["dailyStop", "Daily Loss % → STOP"],
+      ["reduce", "Drawdown % → Reduce Risk"],
+      ["pause", "Drawdown % → Pause / Review 10 trades"],
+      ["review", "Drawdown % → Full Review"],
+      ["reducedRisk", "Reduced Maximum Risk %"],
+    ]
+      .map(([k, l]) =>
+        field(
+          l,
+          k,
+          t[k],
+          "number",
+          "",
+          ["trades", "losses"].includes(k)
+            ? 'required min="1" step="1"'
+            : 'required min="0.01"',
+        ),
+      )
+      .join("") +
+    check(
+      "Allow A+ 0.50% (ต้องปรับ Maximum Risk Per Trade ให้รองรับด้วย)",
+      "allowPlus",
+      t.allowPlus,
+    ) +
+    `</div><p class="muted">B / No Trade = Risk 0 เสมอ · เพดานจริงคือค่าที่ต่ำที่สุดระหว่าง Setup, Maximum Risk และ Drawdown Rule</p></div><div class="actions"><button class="primary">บันทึก Settings</button></div></form><div class="panel" style="margin-top:25px"><h2>Backup & Data Management</h2><p class="muted">Backup ครบ Account / Rules / Daily / Trades / Violation History · Import จะแทนที่ข้อมูลทั้งหมดหลังตรวจสอบ</p><div class="actions"><button data-action="backup">Backup / Export JSON</button><button data-action="csv-daily">Export Daily CSV</button><button data-action="csv-trades">Export Trades CSV</button><label class="field"><span>Import JSON</span><input id="import" type="file" accept=".json,application/json"></label><button class="danger" data-action="reset">Reset Account / เริ่มรอบใหม่</button></div></div>`
+  );
+}
+function explained() {
+  return (
+    head(
+      "FTMO Rules Explained",
+      "สูตรทั้งหมดอยู่ใน calculations.js · ทุก Loss Rule ตรวจ Equity ไม่ใช่ Balance อย่างเดียว",
+    ) +
+    `<div class="panel help"><h2>Balance, Equity และ Floating Loss</h2><p>Balance คือยอดสุทธิจาก Closed Trades; Equity คือมูลค่าบัญชีรวม Open Positions ณ เวลานั้น Floating Loss คือขาดทุนที่ยังไม่ปิด จึงทำให้ Balance มีกำไรแต่ Equity ต่ำกว่า Loss Floor ได้</p><div class="formula">Equity = Balance + Floating P/L + Swap − Commission</div><p>Calculate Mode ใช้ Swap / Commission เฉพาะส่วนที่ยังไม่อยู่ใน Balance หรือ Floating P/L หาก MT5 รวมต้นทุนแล้วให้กรอก 0 หรือใช้ Manual Equity จากยอดจริง ห้ามนับซ้ำ</p><h2>Maximum Daily Loss</h2><div class="formula">Daily Allowance = Initial Capital × Daily Loss %<br>Daily Floor = Balance at 00:00 Europe/Prague − Daily Allowance<br>Daily Buffer = Current Equity − Daily Floor<br>Daily Usage % = MAX(0, Midnight Balance − Equity) / Daily Allowance × 100</div><p>ตรวจการละเมิดจาก Lowest Equity Today &lt; Daily Floor โดยตรง เท่ากับ Floor ยังไม่ถือว่าละเมิดในสูตรนี้ แต่ Planner จะให้หยุดเมื่อแตะ Floor เพราะไม่มี Buffer เหลือ ถ้า Equity ฟื้นกลับมา ประวัติ Violation ยังอยู่</p><h2>Maximum Loss: Static Limit</h2><div class="formula">Maximum Loss Amount = Initial Capital × Maximum Loss %<br>Maximum Loss Floor = Initial Capital − Maximum Loss Amount<br>Maximum Buffer = Equity − Maximum Loss Floor<br>Maximum Usage % = MAX(0, Initial − Equity) / Maximum Loss Amount × 100</div><p>ตรวจ Lowest Equity Since Account Start ด้วย ไม่ใช้ Closed Balance เพียงอย่างเดียว ความปลอดภัยยืนยันได้เฉพาะข้อมูลที่บันทึก แอปไม่มีการเชื่อมต่อ MT5 แบบ Real-Time</p><h2>Drawdown ไม่ใช่ FTMO Loss Usage</h2><div class="formula">Current Drawdown % = MAX(0, Initial − Equity) / Initial × 100<br>Peak Drawdown % = MAX(0, Peak Equity − Equity) / Peak Equity × 100</div><p>Peak Drawdown เป็น Performance Metric ของ Trader ไม่ใช่สูตรเดียวกับ FTMO Maximum Loss Rule ตัวอย่าง Peak 103,000 / Equity 101,000 → 1.94%</p><h2>Profit Target & Trading Days</h2><p>Profit = Balance − Initial เท่านั้น Target ต้องครบ Minimum Trading Days และปิด Positions ทั้งหมดก่อน PASS พร้อม Lowest Equity ครบและไม่มี Violation ที่บันทึกไว้ การถือ Position 3 วันนับวันเปิดเพียง 1 วัน ไม่ใช่จำนวน Trades</p><h2>Overnight Position & Daily Reset</h2><p>Daily Floor เปลี่ยนทุก 00:00 Europe/Prague ตาม Balance ตอนนั้น แต่ Floating Loss ยังอยู่ เช่น Midnight Balance 103,000 ทำให้ Floor 98,000 การถือ Position ข้ามคืนจึงต้องตรวจ Floor ใหม่ ห้าม Hardcode เวลาไทยเพราะ CET / CEST เปลี่ยน DST</p><p>เวลาซ้ำใน DST fall-back จะใช้ instant ที่ตัวแปลงเลือกโดยกำหนดแน่นอนในระบบ หากบันทึกใน Timezone ที่มี DST ควรตรวจเวลา UTC จาก Export JSON; ค่าเริ่มต้น Asia/Bangkok ไม่มี DST</p><h2>Tony Rule Engine</h2><p>Risk % ใช้ Initial Capital เป็นฐาน ลด Risk เมื่อ Initial / Peak Drawdown ถึงเกณฑ์ที่ตั้งไว้; STOP เมื่อจำนวน Trades, Consecutive Losses หรือ Daily Stop ถึงเกณฑ์ นับ Daily/Trade Log แบบใช้ค่าที่มากกว่า ไม่รวมซ้ำ</p><p>Drawdown ≥ Pause จะคงพักจนมี Daily Entry ของวันถัดมาที่เป็นวันทำการ ไม่มี Trade และติ๊ก Review 10 trades แล้ว Full Review ที่เกิดขึ้นจะคง STOP จน Reset รอบใหม่ สำหรับ Martingale / Averaging / Revenge ต้อง Flag เองเพราะโปรแกรมไม่มีข้อมูล Order แบบครบถ้วน</p><h2>ความครบถ้วนของข้อมูล</h2><p>หากไม่ทราบ Lowest Intraday Equity จะขึ้น UNCONFIRMED ไม่สามารถยืนยันว่าไม่เคยผิดกฎ แอปเก็บ Violation ที่ตรวจพบแล้วแม้ลบ/แก้ Daily Entry เพื่อไม่ให้ยอดฟื้นตัวล้างประวัติ Reset Account เท่านั้นที่เริ่มประวัติใหม่</p></div>`
+  );
+}
+function sources() {
+  return (
+    head("Official Sources", "ใช้แหล่งข้อมูล FTMO Official เท่านั้น") +
+    `<div class="notice">FTMO สามารถเปลี่ยนแปลงกฎได้ โปรแกรมนี้จึงออกแบบ Rules Configuration ให้แก้ไขได้ ควรตรวจสอบข้อมูลจาก FTMO Official ก่อนใช้กับ Challenge หรือ FTMO Account จริง</div><div class="panel"><p>Rules Last Verified Date ที่ตั้งไว้: <b>${esc(state.rules.verified)}</b> · เป็นค่าที่ผู้ใช้บันทึก</p>${[
+      ["FTMO Trading Objectives", "https://ftmo.com/en/trading-objectives/"],
+      [
+        "FTMO Maximum Daily Loss",
+        "https://ftmo.com/en/faq/maximum-daily-loss/",
+      ],
+      ["FTMO Maximum Loss", "https://ftmo.com/en/faq/maximum-loss/"],
+      [
+        "FTMO Free Trial FAQ",
+        "https://ftmo.com/en/faq/what-is-the-free-trial/",
+      ],
+    ]
+      .map(
+        ([label, url]) =>
+          `<a class="source" href="${url}" target="_blank" rel="noopener noreferrer">${label} ↗<small style="display:block">${url}</small></a>`,
+      )
+      .join(
+        "",
+      )}<p class="muted">ค่า Default ถูกใส่ตาม Specification ของโปรเจกต์นี้ กรุณาตรวจ Rule สำหรับผลิตภัณฑ์และ Phase ที่คุณใช้ ไม่ใช่ FTMO 1-Step</p></div>`
+  );
+}
+function render() {
+  const page = location.hash.slice(1) || "dashboard",
+    key = labels[page] ? page : "dashboard";
+  app.innerHTML = {
+    dashboard,
+    daily,
+    trades,
+    planner,
+    weekly,
+    settings,
+    explained,
+    sources,
+  }[key]();
+  $("#page-label").textContent = labels[key];
+  document
+    .querySelectorAll("nav a")
+    .forEach((a) => a.classList.toggle("active", a.hash === "#" + key));
+  document.body.classList.toggle("light", state.theme === "light");
+  $("#storage-warning").innerHTML = storageError
+    ? `<div class="notice bad">${esc(storageError)}</div>`
+    : "";
+  bindForms();
+  updateProjection();
+  updateWeek();
+  updateEquityPreview();
+}
+function readNumeric(f, k, nullable = false) {
+  const value = f.elements[k].value;
+  if (nullable && value === "") return null;
+  if (value.trim() === "" || !Number.isFinite(Number(value)))
+    throw Error("กรอกตัวเลขให้ครบ: " + k);
+  return Number(value);
+}
+function latch(next) {
+  const s = C.snapshot(next);
+  const o = next.observed;
+  o.peak = Math.max(o.peak ?? next.account.initial, s.peak);
+  o.low = Math.min(o.low ?? next.account.initial, s.low);
+  o.fullReview ||= s.fullReview;
+  if (s.cooldown) {
+    const triggers = next.daily
+      .filter(
+        (d) =>
+          Math.max(
+            C.calculatePeakDrawdown(
+              next.account.initial,
+              Math.min(C.equityOf(d), d.lowest ?? Infinity),
+            ),
+            C.calculatePeakDrawdown(
+              C.snapshot(next, d.date).peak,
+              Math.min(C.equityOf(d), d.lowest ?? Infinity),
+            ),
+          ) >= next.rules.tony.pause,
+      )
+      .map((d) => d.date)
+      .sort();
+    if (triggers.length) o.pauseDate = triggers.at(-1);
+  } else {
+    o.pauseDate = null;
+  }
+  if (s.fresh && s.internal.level === "STOP" && !o.stops.includes(s.d.date))
+    o.stops.push(s.d.date);
+  for (const e of s.events)
+    if (
+      !next.audit.some(
+        (x) =>
+          x.date === e.date &&
+          x.daily === e.daily &&
+          x.max === e.max &&
+          x.manual === e.manual,
+      )
+    )
+      next.audit.push(e);
+}
+function bindForms() {
+  const df = $("#daily-form"),
+    tf = $("#trade-form"),
+    sf = $("#settings-form");
+  if (df) {
+    df.addEventListener("input", (e) => {
+      syncRisk(df, e);
+      updateEquityPreview();
+    });
+    df.addEventListener("submit", (e) => {
+      e.preventDefault();
+      attempt(() => {
+        const d = {};
+        for (const k of ["date", "mode", "notes", "emotion", "violationNotes"])
+          d[k] = df.elements[k].value;
+        for (const k of [
+          "midnight",
+          "starting",
+          "balance",
+          "equity",
+          "floating",
+          "realised",
+          "commission",
+          "swap",
+          "risk",
+          "trades",
+          "wins",
+          "losses",
+          "consecutive",
+        ])
+          d[k] = readNumeric(df, k);
+        for (const k of ["lowest", "peak"]) d[k] = readNumeric(df, k, true);
+        for (const k of [
+          "opened",
+          "closed",
+          "internalViolation",
+          "manualViolation",
+          "reviewed",
+        ])
+          d[k] = df.elements[k].checked;
+        if (d.date > today()) throw Error("ไม่รับ Daily Entry ของวันอนาคต");
+        const old = state.daily.find((x) => x.date === d.date);
+        if (editingDay && editingDay !== d.date)
+          throw Error("แก้วันที่ไม่ได้: เพิ่มรายการใหม่แทน");
+        const eq = C.equityOf(d);
+        d.lowest =
+          d.lowest === null
+            ? (old?.lowest ?? null)
+            : Math.min(d.lowest, old?.lowest ?? Infinity, eq);
+        if (d.lowest !== null && readNumeric(df, "lowest", true) > eq)
+          throw Error("Lowest Equity ต้องไม่มากกว่า Current Equity");
+        d.peak =
+          d.peak === null
+            ? (old?.peak ?? null)
+            : Math.max(d.peak, old?.peak ?? 0, eq);
+        d.dailyViolation = !!(
+          old?.dailyViolation ||
+          Math.min(eq, d.lowest ?? eq) <
+            C.dailyFloor(
+              d.midnight,
+              state.account.initial,
+              state.rules.phases[state.account.phase].daily,
+            )
+        );
+        d.maxViolation = !!(
+          old?.maxViolation ||
+          Math.min(eq, d.lowest ?? eq) <
+            C.calculateMaximumLossLimit(
+              state.account.initial,
+              state.rules.phases[state.account.phase].max,
+            )
+        );
+        d.manualViolation ||= old?.manualViolation || false;
+        d.internalViolation ||= old?.internalViolation || false;
+        const next = clone();
+        next.daily = next.daily.filter((x) => x.date !== d.date);
+        next.daily.push(d);
+        latch(next);
+        commit(next);
+        editingDay = null;
+        toast("บันทึกแล้ว · ตรวจสูตรและสถานะที่ Dashboard");
+        render();
+      });
+    });
+  }
+  if (tf) {
+    tf.addEventListener("input", (e) => {
+      syncRisk(tf, e);
+      const risk = Number(tf.elements.risk.value);
+      tf.elements.resultR.value =
+        risk > 0
+          ? (
+              (Number(tf.elements.pnl.value) +
+                Number(tf.elements.swap.value) -
+                Number(tf.elements.commission.value)) /
+              risk
+            ).toFixed(4)
+          : "";
+    });
+    tf.addEventListener("submit", (e) => {
+      e.preventDefault();
+      attempt(() => {
+        const t = {};
+        for (const k of ["id", "symbol", "side", "grade", "notes"])
+          t[k] = tf.elements[k].value.trim();
+        t.open = C.zonedInstant(tf.elements.open.value, state.account.timezone);
+        t.close = tf.elements.close.value
+          ? C.zonedInstant(tf.elements.close.value, state.account.timezone)
+          : null;
+        if (
+          new Date(t.open) > new Date() ||
+          (t.close && new Date(t.close) > new Date())
+        )
+          throw Error("ไม่รับ Trade ของเวลาอนาคต");
+        for (const k of [
+          "entry",
+          "sl",
+          "tp",
+          "lot",
+          "risk",
+          "pnl",
+          "commission",
+          "swap",
+        ])
+          t[k] = readNumeric(tf, k);
+        for (const k of ["followed", "violation"])
+          t[k] = tf.elements[k].checked;
+        const next = clone();
+        if (next.trades.some((x) => x.id === t.id && x.id !== editingTrade))
+          throw Error("Trade ID ซ้ำ");
+        next.trades = next.trades.filter((x) => x.id !== editingTrade);
+        next.trades.push(t);
+        latch(next);
+        commit(next);
+        editingTrade = null;
+        toast(
+          "บันทึก Trade แล้ว · ยืนยัน Balance / Equity ใน Daily Entry ด้วย",
+        );
+        render();
+      });
+    });
+  }
+  if (sf)
+    sf.addEventListener("submit", (e) => {
+      e.preventDefault();
+      attempt(() => {
+        const next = clone(),
+          a = next.account;
+        for (const k of ["name", "type", "phase", "timezone", "startDate"])
+          a[k] = sf.elements[k].value.trim();
+        a.initial = readNumeric(sf, "initial");
+        if (a.startDate > today())
+          throw Error("Start Date ต้องไม่เป็นวันอนาคต");
+        if (
+          (state.daily.length ||
+            state.trades.length ||
+            state.audit.length ||
+            state.observed.peak !== null) &&
+          (a.initial !== state.account.initial ||
+            a.phase !== state.account.phase ||
+            a.startDate !== state.account.startDate)
+        )
+          throw Error(
+            "มีประวัติแล้ว: Backup แล้ว Reset Account ก่อนเปลี่ยน Initial / Phase / Start Date",
+          );
+        next.rules.verified = sf.elements.verified.value;
+        C.PHASES.forEach((p, i) => {
+          const r = next.rules.phases[p];
+          for (const k of ["daily", "max"]) r[k] = readNumeric(sf, `p${i}${k}`);
+          if (p !== "FTMO Account")
+            for (const k of ["target", "days"])
+              r[k] = readNumeric(sf, `p${i}${k}`);
+        });
+        for (const k of [
+          "riskA",
+          "riskPlus",
+          "maxRisk",
+          "trades",
+          "losses",
+          "dailyStop",
+          "reduce",
+          "pause",
+          "review",
+          "reducedRisk",
+        ])
+          next.rules.tony[k] = readNumeric(sf, k);
+        next.rules.tony.allowPlus = sf.elements.allowPlus.checked;
+        latch(next);
+        commit(next);
+        toast("บันทึก Account & Rules แล้ว");
+        render();
+      });
+    });
+  const pf = $("#planner-form");
+  if (pf) {
+    pf.addEventListener("submit", (e) => e.preventDefault());
+    pf.addEventListener("input", updateProjection);
+    pf.elements.grade.addEventListener("change", () => {
+      const t = state.rules.tony;
+      pf.elements.riskPercent.value = ["B", "No Trade"].includes(
+        pf.elements.grade.value,
+      )
+        ? 0
+        : Math.min(
+            t.maxRisk,
+            pf.elements.grade.value === "A+" && t.allowPlus
+              ? t.riskPlus
+              : t.riskA,
+          );
+      updateProjection();
+    });
+  }
+  const wf = $("#week-form");
+  if (wf)
+    wf.addEventListener("submit", (e) => {
+      e.preventDefault();
+      updateWeek();
+    });
+  const imp = $("#import");
+  if (imp) imp.addEventListener("change", importData);
+}
+function syncRisk(f, e) {
+  if (e.target.name === "risk")
+    f.elements.riskPercent.value =
+      (Number(f.elements.risk.value) / state.account.initial) * 100;
+  if (e.target.name === "riskPercent")
+    f.elements.risk.value =
+      (Number(f.elements.riskPercent.value) * state.account.initial) / 100;
+}
+function updateEquityPreview() {
+  const f = $("#daily-form");
+  if (!f) return;
+  const eq =
+    f.elements.mode.value === "calculate"
+      ? C.calculateEquity(
+          ...["balance", "floating", "swap", "commission"].map((k) =>
+            Number(f.elements[k].value),
+          ),
+        )
+      : Number(f.elements.equity.value);
+  f.elements.equity.readOnly = f.elements.mode.value === "calculate";
+  $("#equity-preview").textContent =
+    "Equity ที่ใช้คำนวณ: " +
+    money(eq) +
+    " · Daily Floor: " +
+    money(
+      C.dailyFloor(
+        Number(f.elements.midnight.value),
+        state.account.initial,
+        state.rules.phases[state.account.phase].daily,
+      ),
+    );
+}
+function attempt(fn) {
+  try {
+    fn();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+function backup() {
+  const raw = storageError
+    ? localStorage.getItem(S.KEY)
+    : JSON.stringify(state, null, 2);
+  S.download(
+    "ftmo-backup-" + today() + ".json",
+    raw || "{}",
+    "application/json",
+  );
+  toast("ดาวน์โหลด Backup แล้ว");
+}
+async function importData(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    if (file.size > 20000000) throw Error("ไฟล์ใหญ่เกิน 20 MB");
+    const next = S.validate(JSON.parse(await file.text()));
+    if (
+      !confirm(
+        "Import จะแทนที่ข้อมูลทั้งหมด โปรด Backup ก่อน ต้องการดำเนินการ?",
+      )
+    )
+      return;
+    latch(next);
+    S.save(next);
+    state = next;
+    storageError = "";
+    editingDay = editingTrade = null;
+    toast("Restore สำเร็จ");
+    render();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    e.target.value = "";
+  }
+}
+function exportCSV(kind) {
+  if (kind === "daily") {
+    const keys = [
+      "date",
+      "midnight",
+      "starting",
+      "balance",
+      "equity",
+      "lowest",
+      "peak",
+      "floating",
+      "realised",
+      "commission",
+      "swap",
+      "trades",
+      "wins",
+      "losses",
+      "consecutive",
+      "risk",
+      "opened",
+      "closed",
+      "dailyViolation",
+      "maxViolation",
+      "manualViolation",
+      "internalViolation",
+      "notes",
+      "emotion",
+      "violationNotes",
+    ];
+    S.download(
+      "ftmo-daily.csv",
+      S.csv([
+        keys,
+        ...state.daily.map((d) =>
+          keys.map((k) => (k === "equity" ? C.equityOf(d) : d[k])),
+        ),
+      ]),
+      "text/csv;charset=utf-8",
+    );
+  } else {
+    const keys = [
+      "id",
+      "open",
+      "close",
+      "ftmoDate",
+      "symbol",
+      "side",
+      "grade",
+      "entry",
+      "sl",
+      "tp",
+      "lot",
+      "risk",
+      "riskPercent",
+      "pnl",
+      "commission",
+      "swap",
+      "net",
+      "R",
+      "followed",
+      "violation",
+      "notes",
+    ];
+    S.download(
+      "ftmo-trades.csv",
+      S.csv([
+        keys,
+        ...state.trades.map((t) =>
+          keys.map((k) =>
+            k === "ftmoDate"
+              ? C.dateInZone(t.open)
+              : k === "riskPercent"
+                ? (t.risk / state.account.initial) * 100
+                : k === "net"
+                  ? C.netTrade(t)
+                  : k === "R"
+                    ? t.risk > 0
+                      ? C.netTrade(t) / t.risk
+                      : null
+                    : t[k],
+          ),
+        ),
+      ]),
+      "text/csv;charset=utf-8",
+    );
+  }
+}
+function demo() {
+  if (
+    (state.daily.length || state.trades.length) &&
+    !confirm("Demo จะแทนที่บัญชีและประวัติทั้งหมด โปรด Backup ก่อน ดำเนินการ?")
+  )
+    return;
+  const next = C.defaults(),
+    date = today();
+  next.account.startDate = date;
+  next.daily = [
+    {
+      ...blankDay(),
+      date,
+      midnight: 101000,
+      starting: 101000,
+      balance: 100700,
+      equity: 100300,
+      mode: "calculate",
+      floating: -400,
+      lowest: 100200,
+      peak: 101000,
+      realised: -300,
+      trades: 1,
+      wins: 0,
+      losses: 1,
+      consecutive: 1,
+      risk: 250,
+      opened: true,
+      closed: false,
+      notes: "Demo ตาม Specification: Daily Buffer 4,300 / Max Buffer 10,300",
+    },
+  ];
+  S.save(next);
+  state = next;
+  storageError = "";
+  toast("โหลด Demo แล้ว: Daily Floor $96,000 / Buffer $4,300");
+  render();
+}
+app.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  attempt(() => {
+    if (b.dataset.editDay) {
+      editingDay = b.dataset.editDay;
+      render();
+      window.scrollTo(0, 0);
+    }
+    if (b.dataset.editTrade) {
+      editingTrade = b.dataset.editTrade;
+      render();
+      window.scrollTo(0, 0);
+    }
+    if (
+      b.dataset.deleteDay &&
+      confirm("ลบ Daily Entry นี้? Violation ที่เคยตรวจพบยังคงอยู่")
+    ) {
+      const next = clone();
+      latch(next);
+      next.daily = next.daily.filter((d) => d.date !== b.dataset.deleteDay);
+      commit(next);
+      render();
+    }
+    if (b.dataset.deleteTrade && confirm("ลบ Trade นี้?")) {
+      const next = clone();
+      latch(next);
+      next.trades = next.trades.filter((t) => t.id !== b.dataset.deleteTrade);
+      commit(next);
+      render();
+    }
+    switch (b.dataset.action) {
+      case "backup":
+        backup();
+        break;
+      case "csv-daily":
+        exportCSV("daily");
+        break;
+      case "csv-trades":
+        exportCSV("trades");
+        break;
+      case "cancel-day":
+        editingDay = null;
+        render();
+        break;
+      case "cancel-trade":
+        editingTrade = null;
+        render();
+        break;
+      case "demo":
+        demo();
+        break;
+      case "reset":
+        if (
+          confirm(
+            "Reset จะล้าง Daily / Trades / Violation ทั้งหมด แต่คง Account / Rules โปรด Backup ก่อน เริ่มรอบใหม่?",
+          )
+        ) {
+          const next = clone();
+          next.daily = [];
+          next.trades = [];
+          next.audit = [];
+          next.observed = {
+            peak: null,
+            low: null,
+            pauseDate: null,
+            fullReview: false,
+            stops: [],
+          };
+          next.account.startDate = today();
+          S.save(next);
+          state = next;
+          storageError = "";
+          editingDay = editingTrade = null;
+          toast("เริ่มรอบใหม่แล้ว ปรับ Account Settings ได้");
+          render();
+        }
+        break;
+    }
+  });
+});
+$("#backup").addEventListener("click", () => attempt(backup));
+$("#theme").addEventListener("click", () =>
+  attempt(() => {
+    const next = clone();
+    next.theme = next.theme === "dark" ? "light" : "dark";
+    commit(next);
+    render();
+  }),
+);
+window.addEventListener("hashchange", () => {
+  render();
+  window.scrollTo(0, 0);
+});
+window.addEventListener("storage", (e) => {
+  if (e.key === S.KEY) {
+    try {
+      state = S.load();
+      storageError = "";
+      render();
+      toast("ข้อมูลถูกอัปเดตจากอีกแท็บแล้ว");
+    } catch {
+      toast("ข้อมูลอีกแท็บผิดรูปแบบ กรุณา Reload และตรวจ Backup", true);
+    }
+  }
+});
+render();
