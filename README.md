@@ -5,9 +5,13 @@ Local Web Application สำหรับ **Tony Funded Trader Project** ติ�
 ## เปิดใช้งานบน Windows
 
 1. ดาวน์โหลด/Clone repository นี้ แล้วเก็บไฟล์ทั้งหมดไว้ในโฟลเดอร์เดียวกัน
-2. ดับเบิลคลิก `index.html` เพื่อเปิดด้วย Microsoft Edge / Google Chrome รุ่นปัจจุบัน
-3. เปิด **Account & Rules** เพื่อตั้งชื่อบัญชี ทุนเริ่มต้น Phase วันเริ่ม และ Timezone
-4. เปิด **บันทึกรายวัน** เพื่อกรอกข้อมูลจริง แล้วดู Dashboard / Next Trade Planner
+2. คลิกขวา ZIP → **Extract All / แยกไฟล์ทั้งหมด** ก่อน อย่าเปิด HTML จากใน ZIP โดยตรง
+3. ดับเบิลคลิก **`FTMO-Tracker.html`** เพื่อเปิดด้วย Edge / Chrome รุ่นปัจจุบัน ไฟล์นี้รวม CSS และ JavaScript แล้ว จึงย้ายไปโฟลเดอร์อื่นได้โดยไม่ต้องย้ายไฟล์ประกอบ
+
+4. เปิด **Account & Rules** เพื่อตั้งชื่อบัญชี ทุนเริ่มต้น Phase วันเริ่ม และ Timezone
+5. เปิด **บันทึกรายวัน** เพื่อกรอกข้อมูลจริง แล้วดู Dashboard / Next Trade Planner
+
+สำหรับนักพัฒนา เปิด `index.html` ได้เช่นกัน แต่ต้องมี `styles.css`, `calculations.js`, `storage.js` และ `app.js` อยู่ด้วยในโฟลเดอร์เดียวกัน หากเห็นหน้าเป็นข้อความ/ลิงก์ธรรมดาและไม่มี Dashboard แปลว่าไฟล์ประกอบยังไม่ถูกโหลด
 
 หาก Browser หรือนโยบายองค์กรไม่อนุญาต `file://` / localStorage ให้ใช้ Local Server (ต้องมี Python 3):
 
@@ -127,6 +131,8 @@ Lot ปัดลงตาม Step; Buffer ใช้ Risk เต็มที่�
 
 ## ตรวจสูตร / Run Tests
 
+เมื่อแก้ HTML/CSS/JavaScript ให้สร้างรุ่นไฟล์เดียวใหม่ด้วย `node build-standalone.cjs` ไม่แก้ `FTMO-Tracker.html` โดยตรง การสลับเปิด `index.html` กับ `FTMO-Tracker.html` ผ่าน `file://` อาจใช้พื้นที่เก็บข้อมูลต่างกันตาม Browser ให้ Backup JSON ก่อนย้าย
+
 ใช้ Node.js 20+ (ไม่ต้องติดตั้ง Package):
 
 ```powershell
@@ -158,13 +164,15 @@ node tests.browser.cjs
 
 ## โครงสร้างไฟล์
 
-| ไฟล์                | หน้าที่                                                      |
-| ------------------- | ------------------------------------------------------------ |
-| `index.html`        | Shell / navigation / โหลด Classic Scripts                    |
-| `styles.css`        | Responsive Desktop/Tablet/Mobile + Dark/Light                |
-| `app.js`            | UI, Forms, Charts, Backup/Restore และจัดการการบันทึก         |
-| `calculations.js`   | Pure Calculation / FTMO & Tony Rule Engine / Prague Timezone |
-| `storage.js`        | localStorage, JSON Validation, CSV และ Downloads             |
-| `tests.js`          | Automated Calculation/Storage Tests ด้วย Node Test Runner    |
-| `tests.browser.cjs` | Optional Browser Integration Tests                           |
-| `README.md`         | วิธีใช้ / นิยาม / ข้อจำกัด / วิธีทดสอบ                       |
+| ไฟล์                   | หน้าที่                                                      |
+| ---------------------- | ------------------------------------------------------------ |
+| `FTMO-Tracker.html`    | รุ่นไฟล์เดียวสำหรับเปิดบน Windows (Generated)                |
+| `build-standalone.cjs` | สร้างรุ่นไฟล์เดียวจาก Source Modules                         |
+| `index.html`           | Shell / navigation / โหลด Classic Scripts                    |
+| `styles.css`           | Responsive Desktop/Tablet/Mobile + Dark/Light                |
+| `app.js`               | UI, Forms, Charts, Backup/Restore และจัดการการบันทึก         |
+| `calculations.js`      | Pure Calculation / FTMO & Tony Rule Engine / Prague Timezone |
+| `storage.js`           | localStorage, JSON Validation, CSV และ Downloads             |
+| `tests.js`             | Automated Calculation/Storage Tests ด้วย Node Test Runner    |
+| `tests.browser.cjs`    | Optional Browser Integration Tests                           |
+| `README.md`            | วิธีใช้ / นิยาม / ข้อจำกัด / วิธีทดสอบ                       |

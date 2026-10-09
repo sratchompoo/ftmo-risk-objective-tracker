@@ -10,6 +10,7 @@ const server = http.createServer((req, res) => {
   if (
     ![
       "index.html",
+      "FTMO-Tracker.html",
       "styles.css",
       "app.js",
       "calculations.js",
@@ -166,13 +167,11 @@ const cleanup = async () => {
   const savedBefore = await page.evaluate(() =>
     localStorage.getItem("tony-ftmo-tracker-v1"),
   );
-  await page
-    .locator("#import")
-    .setInputFiles({
-      name: "bad.json",
-      mimeType: "application/json",
-      buffer: Buffer.from('{"version":1}'),
-    });
+  await page.locator("#import").setInputFiles({
+    name: "bad.json",
+    mimeType: "application/json",
+    buffer: Buffer.from('{"version":1}'),
+  });
   await page.waitForFunction(
     () => document.querySelector("#toast").className === "error",
   );
@@ -217,6 +216,34 @@ const cleanup = async () => {
     ),
     true,
   );
+  // The portable version must work without any sibling stylesheet or JS file.
+  const standalone = await browser.newPage();
+  const requests = [];
+  standalone.on("pageerror", (e) => errors.push(e.message));
+  standalone.on("request", (request) => requests.push(request.url()));
+  await standalone.route("**/*.css", (route) => route.abort());
+  await standalone.route("**/*.js", (route) => route.abort());
+  await standalone.goto(base + "/FTMO-Tracker.html");
+  await standalone.locator("h1").waitFor();
+  assert.equal(await standalone.locator("#loading-warning").isVisible(), false);
+  assert.equal(
+    await standalone.evaluate(
+      () => getComputedStyle(document.querySelector(".shell")).display,
+    ),
+    "grid",
+  );
+  assert.equal(
+    requests.filter((url) => /\.(js|css)(\?|$)/.test(url)).length,
+    0,
+  );
+  await standalone.goto(base + "/FTMO-Tracker.html#planner");
+  await standalone.locator("#planner-form").waitFor();
+  assert.ok(
+    (await standalone.locator("#projection").textContent()).includes(
+      "DO NOT TRADE",
+    ),
+  );
+  await standalone.close();
   assert.deepEqual(errors, []);
   console.log(
     "PASS: HTTP local startup, 8 routes, demo, reload persistence, intraday violation, sticky violation after delete, reset, planner, trade create/edit, XSS escaping, JSON backup/restore, theme persistence, tablet/mobile layout; no browser errors.",

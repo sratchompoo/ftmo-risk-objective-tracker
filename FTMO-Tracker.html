@@ -1,3 +1,1715 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>FTMO Risk & Objective Tracker — Tony</title>
+    <style>
+:root {
+  --bg: #0e141b;
+  --panel: #151e28;
+  --panel2: #192430;
+  --line: #293544;
+  --text: #e5ecf4;
+  --muted: #91a1b4;
+  --accent: #74d4b0;
+  --green: #74d4b0;
+  --yellow: #e4c578;
+  --orange: #eca367;
+  --red: #f28c93;
+  --shadow: 0 10px 30px #0001;
+  color-scheme: dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    14px/1.65 "Segoe UI",
+    Tahoma,
+    sans-serif;
+}
+body.light {
+  --bg: #f3f6f8;
+  --panel: #fff;
+  --panel2: #f6f8fa;
+  --line: #dae3e9;
+  --text: #1d2d3f;
+  --muted: #617388;
+  --accent: #18775a;
+  --green: #18775a;
+  --yellow: #89670c;
+  --orange: #ac601d;
+  --red: #b93348;
+  color-scheme: light;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel2);
+  color: var(--text);
+  padding: 9px 15px;
+}
+button:hover {
+  border-color: var(--accent);
+}
+button.primary {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+  border-color: var(--accent);
+}
+button.danger {
+  color: var(--red);
+}
+button.quiet {
+  background: transparent;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 236px 1fr;
+  min-height: 100vh;
+}
+aside {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 32px 18px;
+  position: fixed;
+  width: 236px;
+  inset: 0 auto 0 0;
+  display: flex;
+  flex-direction: column;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  padding: 0 9px;
+}
+.brand small {
+  display: block;
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 1.6px;
+  color: var(--muted);
+}
+.brand-icon {
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 29px;
+  letter-spacing: 0;
+}
+.nav-caption {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  margin: 45px 12px 15px;
+}
+nav a {
+  display: flex;
+  gap: 14px;
+  color: var(--muted);
+  padding: 12px;
+  border-radius: 7px;
+  margin: 3px 0;
+}
+nav a.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.aside-bottom {
+  margin-top: auto;
+  padding: 20px 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.aside-bottom small {
+  display: block;
+  margin: 10px 0;
+  line-height: 1.8;
+}
+.local-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-right: 6px;
+}
+main {
+  grid-column: 2;
+  min-width: 0;
+  padding: 0 38px;
+}
+header {
+  height: 82px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.breadcrumb {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.breadcrumb span {
+  color: var(--text);
+  letter-spacing: 0;
+}
+.header-actions,
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#app {
+  max-width: 1440px;
+  margin: 32px auto 0;
+}
+h1 {
+  font-size: 28px;
+  letter-spacing: -0.6px;
+  line-height: 1.3;
+  margin: 8px 0 10px;
+}
+h2 {
+  font-size: 17px;
+  line-height: 1.4;
+  margin: 0 0 18px;
+}
+h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+p {
+  margin: 10px 0;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.muted,
+small {
+  color: var(--muted);
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+.page-head p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+.badge {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 3px 9px;
+  display: inline-block;
+  color: var(--green);
+}
+.badge.WARNING,
+.badge.UNCONFIRMED {
+  color: var(--yellow);
+}
+.badge.ORANGE {
+  color: var(--orange);
+}
+.badge.STOP,
+.badge.RULE {
+  color: var(--red);
+}
+.panel,
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 23px;
+  box-shadow: var(--shadow);
+}
+.panel {
+  margin-bottom: 20px;
+}
+.grid {
+  display: grid;
+  gap: 18px;
+}
+.grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  padding: 20px 0;
+  margin-bottom: 24px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.metrics > div {
+  padding: 0 20px;
+  border-right: 1px solid var(--line);
+}
+.metrics > div:first-child {
+  padding-left: 0;
+}
+.metrics > div:last-child {
+  border: 0;
+}
+.metric-label,
+.card-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+.metric-value {
+  font-size: 23px;
+  font-weight: 600;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.card-value {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 10px 0 3px;
+  font-variant-numeric: tabular-nums;
+}
+.card-detail {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 9px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.positive {
+  color: var(--green);
+}
+.negative {
+  color: var(--red);
+}
+.progress {
+  height: 5px;
+  background: var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 17px;
+}
+.progress i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.progress.warn i {
+  background: var(--yellow);
+}
+.progress.bad i {
+  background: var(--red);
+}
+.decision {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  border-left: 3px solid var(--green);
+  margin-top: 22px;
+  background: color-mix(in srgb, var(--green) 4%, var(--panel));
+}
+.decision.STOP {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 4%, var(--panel));
+}
+.decision.WARNING {
+  border-color: var(--yellow);
+}
+.decision.ORANGE {
+  border-color: var(--orange);
+}
+.decision h2 {
+  font-size: 20px;
+  margin: 7px 0;
+}
+.decision p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 5px 0;
+}
+.notice {
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--yellow) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--yellow) 35%, var(--line));
+  border-radius: 7px;
+  color: var(--yellow);
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+.notice.bad {
+  color: var(--red);
+  border-color: var(--red);
+}
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 28px 0 15px;
+}
+.section-head h2 {
+  margin: 0;
+}
+.reset-time {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+}
+.charts svg {
+  width: 100%;
+  height: 200px;
+  overflow: visible;
+}
+.chart-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.legend {
+  font-size: 11px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+.empty {
+  padding: 20px;
+  color: var(--muted);
+  text-align: center;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.field > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 0;
+}
+input[readonly] {
+  color: var(--muted);
+}
+textarea {
+  resize: vertical;
+  min-height: 78px;
+}
+.field small {
+  font-size: 11px;
+}
+.wide {
+  grid-column: 1/-1;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.check input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+form .actions {
+  margin-top: 22px;
+}
+.table-wrap {
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  background: var(--panel2);
+}
+td,
+th {
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+td button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.summary-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 25px;
+}
+.summary-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.summary-list span {
+  color: var(--muted);
+}
+.summary-list b {
+  font-weight: 500;
+  text-align: right;
+}
+.formula {
+  background: var(--bg);
+  padding: 12px 15px;
+  border-radius: 5px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  overflow: auto;
+}
+.help p {
+  color: var(--muted);
+}
+.help h2 {
+  margin-top: 25px;
+}
+.source {
+  display: block;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+footer {
+  color: var(--muted);
+  font-size: 10px;
+  margin: 35px 0 20px;
+}
+#toast {
+  position: fixed;
+  right: 25px;
+  bottom: 25px;
+  max-width: 450px;
+  z-index: 10;
+  background: var(--panel2);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 20px;
+  display: none;
+}
+#toast.error {
+  border-color: var(--red);
+  color: var(--red);
+}
+#storage-warning {
+  margin-top: 15px;
+}
+details summary {
+  cursor: pointer;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.inline-form {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.inline-form .field {
+  flex: 1;
+  min-width: 180px;
+}
+@media (min-width: 1700px) {
+  main {
+    padding: 0 65px;
+  }
+}
+@media (max-width: 1200px) {
+  main {
+    padding: 0 24px;
+  }
+  .grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .metrics {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .metrics > div {
+    border: 0;
+    padding: 0;
+  }
+  .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 180px 1fr;
+  }
+  aside {
+    width: 180px;
+    padding: 24px 10px;
+  }
+  .brand {
+    font-size: 16px;
+    gap: 7px;
+  }
+  .brand small {
+    font-size: 6px;
+  }
+  .brand-icon {
+    font-size: 24px;
+    padding: 0 9px;
+  }
+  nav a {
+    gap: 8px;
+    font-size: 12px;
+  }
+  .grid.two,
+  .grid.three {
+    grid-template-columns: 1fr;
+  }
+  .page-head {
+    align-items: start;
+    flex-direction: column;
+  }
+  .reset-time {
+    text-align: left;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .summary-list {
+    grid-template-columns: 1fr;
+  }
+  .decision {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 600px) {
+  .shell {
+    display: block;
+  }
+  aside {
+    position: static;
+    width: auto;
+    padding: 15px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    margin-bottom: 15px;
+  }
+  nav {
+    display: flex;
+    overflow: auto;
+  }
+  nav a {
+    flex: none;
+    padding: 7px 10px;
+  }
+  .nav-caption,
+  .aside-bottom {
+    display: none;
+  }
+  main {
+    padding: 0 16px;
+  }
+  header {
+    height: 65px;
+  }
+  .breadcrumb {
+    font-size: 9px;
+  }
+  .header-actions button {
+    padding: 7px 9px;
+    font-size: 11px;
+  }
+  h1 {
+    font-size: 24px;
+  }
+  .grid.four,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .panel,
+  .card {
+    padding: 18px;
+  }
+  .metrics .metric-value {
+    font-size: 20px;
+  }
+  .card-value {
+    font-size: 25px;
+  }
+}
+
+</style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside>
+        <a class="brand" href="#dashboard"
+          ><span class="brand-icon">T</span
+          ><span>TONY <small>FUNDED TRADER PROJECT</small></span></a
+        >
+        <div class="nav-caption">WORKSPACE</div>
+        <nav aria-label="เมนูหลัก">
+          <a href="#dashboard">◫ <span>ภาพรวมบัญชี</span></a
+          ><a href="#daily">＋ <span>บันทึกรายวัน</span></a
+          ><a href="#trades">≡ <span>Trade Log</span></a
+          ><a href="#planner">◎ <span>Next Trade Planner</span></a
+          ><a href="#weekly">▥ <span>Weekly Review</span></a
+          ><a href="#settings">⚙ <span>Account & Rules</span></a
+          ><a href="#explained">ⓘ <span>FTMO Rules Explained</span></a
+          ><a href="#sources">↗ <span>Official Sources</span></a>
+        </nav>
+        <div class="aside-bottom">
+          <span class="local-dot"></span> Local workspace<small
+            >ข้อมูลเก็บใน Browser นี้<br />Risk tracker · ไม่มี Buy/Sell
+            Signal</small
+          >
+        </div>
+      </aside>
+      <main>
+        <header>
+          <div class="breadcrumb">
+            TONY / <span id="page-label">ภาพรวมบัญชี</span>
+          </div>
+          <div class="header-actions">
+            <button id="backup" class="quiet">↓ Backup JSON</button
+            ><button
+              id="theme"
+              class="quiet"
+              aria-label="เปลี่ยน Dark / Light mode"
+            >
+              ◐
+            </button>
+          </div>
+        </header>
+        <div id="toast" role="status" aria-live="polite"></div>
+        <div id="storage-warning"></div>
+        <div id="loading-warning" class="notice">
+          กำลังเปิดโปรแกรม… หากข้อความนี้ไม่หาย ให้แตก ZIP ด้วย Extract All ก่อน
+          แล้วตรวจว่า index.html, styles.css, calculations.js, storage.js และ
+          app.js อยู่ในโฟลเดอร์เดียวกัน หรือเปิด FTMO-Tracker.html
+          รุ่นไฟล์เดียวแทน
+        </div>
+        <noscript
+          ><div class="notice bad">
+            โปรแกรมนี้ต้องเปิดใช้งาน JavaScript ใน Browser
+          </div></noscript
+        >
+        <div id="app"></div>
+        <footer>
+          FTMO Risk & Objective Tracker · Tony Funded Trader Project ·
+          คำนวณจากข้อมูลที่คุณบันทึกเท่านั้น
+        </footer>
+      </main>
+    </div>
+    <script>
+/* Shared pure rule engine: works in a browser opened via file:// and in Node tests. */
+(function (root) {
+  "use strict";
+  const PHASES = ["Free Trial", "Challenge", "Verification", "FTMO Account"];
+  const defaults = () => ({
+    account: {
+      name: "FTMO Free Trial Round 1",
+      type: "FTMO 2-Step",
+      initial: 100000,
+      phase: "Free Trial",
+      startDate: dateInZone(new Date(), "Europe/Prague"),
+      timezone: "Asia/Bangkok",
+    },
+    rules: {
+      verified: "2026-10-09",
+      phases: {
+        "Free Trial": { target: 5, days: 2, daily: 5, max: 10 },
+        Challenge: { target: 10, days: 4, daily: 5, max: 10 },
+        Verification: { target: 5, days: 4, daily: 5, max: 10 },
+        "FTMO Account": { target: null, days: null, daily: 5, max: 10 },
+      },
+      tony: {
+        riskA: 0.25,
+        riskPlus: 0.5,
+        allowPlus: false,
+        maxRisk: 0.25,
+        trades: 2,
+        losses: 2,
+        dailyStop: 1,
+        reduce: 2,
+        pause: 3,
+        review: 4,
+        reducedRisk: 0.25,
+      },
+    },
+    daily: [],
+    trades: [],
+    audit: [],
+    observed: {
+      peak: null,
+      low: null,
+      pauseDate: null,
+      fullReview: false,
+      stops: [],
+    },
+    theme: "dark",
+    version: 1,
+  });
+  function dateInZone(value, zone = "Europe/Prague") {
+    const p = new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(value));
+    const get = (t) => p.find((x) => x.type === t).value;
+    return `${get("year")}-${get("month")}-${get("day")}`;
+  }
+  function zonedInstant(local, zone) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(
+      local,
+    );
+    if (!m) throw Error("วันเวลาไม่ถูกต้อง");
+    const nums = m.slice(1).map(Number);
+    const target = Date.UTC(
+      nums[0],
+      nums[1] - 1,
+      nums[2],
+      nums[3],
+      nums[4],
+      nums[5] || 0,
+    );
+    let guess = target;
+    const fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    for (let i = 0; i < 5; i++) {
+      const p = fmt.formatToParts(new Date(guess)),
+        g = (t) => Number(p.find((x) => x.type === t).value);
+      const represented = Date.UTC(
+        g("year"),
+        g("month") - 1,
+        g("day"),
+        g("hour"),
+        g("minute"),
+        g("second"),
+      );
+      const delta = target - represented;
+      if (!delta) return new Date(guess).toISOString();
+      guess += delta;
+    }
+    throw Error("เวลานี้ไม่มีอยู่จริงใน Timezone ที่เลือก (DST)");
+  }
+  function resetInstant(date) {
+    return zonedInstant(date + "T00:00", "Europe/Prague");
+  }
+  const calculateEquity = (balance, floating = 0, swap = 0, commission = 0) =>
+    balance + floating + swap - commission;
+  const calculateDailyLossLimit = (initial, percent = 5) =>
+    (initial * percent) / 100;
+  const dailyFloor = (midnight, initial, percent = 5) =>
+    midnight - calculateDailyLossLimit(initial, percent);
+  const calculateDailyLossUsed = (midnight, equity, allowance) =>
+    (Math.max(0, midnight - equity) / allowance) * 100;
+  const calculateDailyBuffer = (equity, floor) => equity - floor;
+  const calculateMaximumLossLimit = (initial, percent = 10) =>
+    initial * (1 - percent / 100);
+  const calculateMaximumLossUsed = (initial, equity, percent = 10) =>
+    (Math.max(0, initial - equity) / ((initial * percent) / 100)) * 100;
+  const calculateMaximumLossBuffer = (equity, floor) => equity - floor;
+  const calculatePeakDrawdown = (peak, equity) =>
+    Math.max(0, ((peak - equity) / peak) * 100);
+  function calculateProfitProgress(
+    balance,
+    initial,
+    target,
+    closed,
+    days,
+    minDays,
+  ) {
+    const profit = balance - initial;
+    return {
+      profit,
+      profitPercent: (profit / initial) * 100,
+      targetAmount: target === null ? null : (initial * target) / 100,
+      targetBalance: target === null ? null : initial * (1 + target / 100),
+      progress:
+        target === null ? null : (profit / ((initial * target) / 100)) * 100,
+      remaining:
+        target === null
+          ? null
+          : Math.max(0, initial * (1 + target / 100) - balance),
+      reached: target !== null && profit >= (initial * target) / 100,
+      pass:
+        target !== null &&
+        profit >= (initial * target) / 100 &&
+        closed &&
+        days >= (minDays || 0),
+    };
+  }
+  function tradingDates(trades, daily, start = "0000-01-01") {
+    return [
+      ...new Set([
+        ...trades
+          .filter((t) => t.grade !== "No Trade")
+          .map((t) => dateInZone(t.open)),
+        ...daily.filter((d) => d.opened).map((d) => d.date),
+      ]),
+    ]
+      .filter((d) => d >= start)
+      .sort();
+  }
+  const calculateTradingDays = (trades, daily = [], start) =>
+    tradingDates(trades, daily, start).length;
+  function equityOf(d) {
+    return d.mode === "calculate"
+      ? calculateEquity(d.balance, d.floating, d.swap, d.commission)
+      : d.equity;
+  }
+  function closedTrades(trades, date) {
+    return trades
+      .filter(
+        (t) =>
+          t.close && dateInZone(t.close) === date && t.grade !== "No Trade",
+      )
+      .sort(
+        (a, b) =>
+          a.close.localeCompare(b.close) ||
+          a.open.localeCompare(b.open) ||
+          a.id.localeCompare(b.id),
+      );
+  }
+  function netTrade(t) {
+    return t.pnl + t.swap - t.commission;
+  }
+  function dayStats(state, d) {
+    const opened = state.trades.filter(
+      (t) => t.grade !== "No Trade" && dateInZone(t.open) === d.date,
+    );
+    const closed = closedTrades(state.trades, d.date);
+    let streak = 0,
+      maxStreak = 0;
+    closed.forEach((t) => {
+      streak = netTrade(t) < 0 ? streak + 1 : 0;
+      maxStreak = Math.max(streak, maxStreak);
+    });
+    const count = Math.max(d.trades, opened.length);
+    const risk = Math.max(
+      d.risk,
+      opened.reduce((s, t) => s + t.risk, 0),
+    );
+    const breaches = opened.filter(
+      (t) =>
+        t.violation ||
+        !t.followed ||
+        (["B", "No Trade"].includes(t.grade) && t.risk > 0) ||
+        (t.risk / state.account.initial) * 100 >
+          Math.min(
+            state.rules.tony.maxRisk,
+            t.grade === "A+" && state.rules.tony.allowPlus
+              ? state.rules.tony.riskPlus
+              : state.rules.tony.riskA,
+          ),
+    );
+    const increased = opened.some((t) =>
+      closed.some((p) => p.close <= t.open && netTrade(p) < 0 && p.lot < t.lot),
+    );
+    return {
+      count,
+      risk,
+      riskPercent: (risk / state.account.initial) * 100,
+      lossStreak: Math.max(
+        maxStreak,
+        d.consecutive || 0,
+        d.losses >= state.rules.tony.losses && d.wins === 0 ? d.losses : 0,
+      ),
+      breaches,
+      increased,
+    };
+  }
+  function calculateInternalRiskStatus(s) {
+    const { tony: t } = s.rules;
+    const reasons = [];
+    let level = "GREEN",
+      decision = "SAFE TO WAIT FOR A+ / A SETUP";
+    const stop = (r) => {
+      reasons.push(r);
+      level = "STOP";
+      decision = "STOP TRADING TODAY";
+    };
+    if (s.initialDD >= t.review || s.peakDD >= t.review || s.fullReview) {
+      stop("Drawdown ถึงเกณฑ์ Full Review");
+      decision = "REVIEW REQUIRED";
+    }
+    if (s.initialDD >= t.pause || s.peakDD >= t.pause || s.cooldown) {
+      stop("พักอย่างน้อย 1 trading day และทบทวน 10 trades ล่าสุด");
+      decision = "REVIEW REQUIRED";
+    }
+    if (
+      s.dailyLossPercent >= t.dailyStop ||
+      s.worstDailyLossPercent >= t.dailyStop
+    )
+      stop("Daily Loss ถึง Tony Daily Stop");
+    if (s.stats.count >= t.trades) stop("ครบจำนวน Trades สูงสุดต่อวัน");
+    if (s.stats.lossStreak >= t.losses)
+      stop("ถึงจำนวน Consecutive Losses ที่กำหนด");
+    if (
+      s.stats.breaches.length ||
+      s.stats.increased ||
+      s.d.internalViolation ||
+      s.retainedStop
+    )
+      stop("ผิดแผน / Risk เกินกำหนด / เพิ่ม Lot หลังขาดทุน / กฎภายใน");
+    if (s.violation) {
+      stop("FTMO Loss Rule ถูกละเมิดแล้ว");
+      decision = "FTMO RULE VIOLATED";
+    }
+    if (!s.fresh) {
+      stop("ไม่มี Daily Entry ของวัน CE(S)T ปัจจุบัน");
+    }
+    const reduced = s.initialDD >= t.reduce || s.peakDD >= t.reduce;
+    if (
+      level === "GREEN" &&
+      (reduced ||
+        s.dailyLossPercent >= t.dailyStop * 0.5 ||
+        s.dailyUsed >= 80 ||
+        s.maxUsed >= 80)
+    ) {
+      level = s.dailyLossPercent >= t.dailyStop * 0.8 ? "ORANGE" : "WARNING";
+      decision = reduced ? "REDUCE RISK" : "TRADE WITH 0.25% MAX RISK";
+      reasons.push(
+        reduced ? "Drawdown ถึงเกณฑ์ลด Risk" : "เข้าใกล้ Loss Limit",
+      );
+    }
+    if (s.violation) decision = "FTMO RULE VIOLATED";
+    else if (
+      s.fullReview ||
+      s.cooldown ||
+      s.initialDD >= t.pause ||
+      s.peakDD >= t.pause
+    )
+      decision = "REVIEW REQUIRED";
+    const maxRisk = Math.min(t.maxRisk, reduced ? t.reducedRisk : Infinity);
+    if (level !== "STOP" && maxRisk !== 0.25)
+      decision = reduced ? "REDUCE RISK" : `TRADE WITH ${maxRisk}% MAX RISK`;
+    return {
+      level,
+      decision,
+      reasons,
+      maxRisk: level === "STOP" ? 0 : maxRisk,
+    };
+  }
+  function snapshot(state, asOf = dateInZone(new Date())) {
+    const initial = state.account.initial,
+      rule = state.rules.phases[state.account.phase];
+    const rows = state.daily
+      .filter((d) => d.date <= asOf)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const d = rows.at(-1) || {
+      date: asOf,
+      midnight: initial,
+      starting: initial,
+      balance: initial,
+      equity: initial,
+      mode: "manual",
+      lowest: null,
+      peak: null,
+      floating: 0,
+      commission: 0,
+      swap: 0,
+      trades: 0,
+      wins: 0,
+      losses: 0,
+      risk: 0,
+      consecutive: 0,
+      opened: false,
+      closed: true,
+    };
+    const equity = equityOf(d);
+    const useObserved = asOf >= dateInZone(new Date());
+    let peak = initial,
+      low = initial,
+      violation = false,
+      dailyViolation = false,
+      maxViolation = false,
+      cooldown = !!(
+        state.observed?.pauseDate && state.observed.pauseDate <= asOf
+      ),
+      fullReview = useObserved && !!state.observed?.fullReview,
+      coverage = true;
+    const events = [];
+    rows.forEach((row) => {
+      const e = equityOf(row),
+        floor = dailyFloor(row.midnight, initial, rule.daily);
+      peak = Math.max(peak, e, row.peak || 0);
+      low = Math.min(low, e, row.lowest ?? e);
+      const dayBad = Math.min(e, row.lowest ?? e) < floor || row.dailyViolation,
+        maxBad =
+          Math.min(e, row.lowest ?? e) <
+            calculateMaximumLossLimit(initial, rule.max) || row.maxViolation;
+      dailyViolation ||= !!dayBad;
+      maxViolation ||= !!maxBad;
+      if (dayBad || maxBad || row.manualViolation)
+        events.push({
+          date: row.date,
+          daily: !!dayBad,
+          max: !!maxBad,
+          manual: !!row.manualViolation,
+        });
+      violation ||= !!(dayBad || maxBad || row.manualViolation);
+      coverage &&= row.lowest !== null && row.lowest !== undefined;
+      const dd = Math.max(
+        calculatePeakDrawdown(initial, Math.min(e, row.lowest ?? e)),
+        calculatePeakDrawdown(peak, Math.min(e, row.lowest ?? e)),
+      );
+      if (dd >= state.rules.tony.review) fullReview = true;
+      if (dd >= state.rules.tony.pause) {
+        cooldown = true;
+      } else if (
+        cooldown &&
+        (!state.observed?.pauseDate || row.date > state.observed.pauseDate) &&
+        !row.opened &&
+        dayStats(state, row).count === 0 &&
+        row.reviewed &&
+        !["Sat", "Sun"].includes(
+          new Intl.DateTimeFormat("en-US", {
+            weekday: "short",
+            timeZone: "Europe/Prague",
+          }).format(new Date(resetInstant(row.date))),
+        )
+      ) {
+        cooldown = false;
+      }
+    });
+    if (useObserved) {
+      peak = Math.max(peak, state.observed?.peak ?? initial);
+      low = Math.min(low, state.observed?.low ?? initial);
+    }
+    (state.audit || [])
+      .filter((e) => e.date <= asOf)
+      .forEach((e) => {
+        if (
+          !events.some(
+            (x) =>
+              x.date === e.date &&
+              x.daily === e.daily &&
+              x.max === e.max &&
+              x.manual === e.manual,
+          )
+        )
+          events.push(e);
+        dailyViolation ||= e.daily;
+        maxViolation ||= e.max;
+        violation ||= e.daily || e.max || e.manual;
+      });
+    const floor = dailyFloor(d.midnight, initial, rule.daily),
+      maxFloor = calculateMaximumLossLimit(initial, rule.max);
+    if (low < maxFloor && !maxViolation) {
+      maxViolation = true;
+      violation = true;
+      events.push({ date: d.date, daily: false, max: true, manual: false });
+    }
+    const stats = dayStats(state, d);
+    const tradingDays = calculateTradingDays(
+      state.trades.filter((t) => dateInZone(t.open) <= asOf),
+      rows,
+      state.account.startDate,
+    );
+    const openTrades = state.trades.some(
+      (t) =>
+        t.grade !== "No Trade" &&
+        dateInZone(t.open) <= asOf &&
+        (!t.close || dateInZone(t.close) > asOf),
+    );
+    const closed = d.closed && !openTrades;
+    const result = {
+      d,
+      initial,
+      rule,
+      rules: state.rules,
+      equity,
+      balance: d.balance,
+      peak,
+      low,
+      coverage: coverage && rows.length > 0,
+      fresh: rows.length > 0 && d.date === asOf,
+      floor,
+      maxFloor,
+      dailyAmount: (initial * rule.daily) / 100,
+      maxAmount: (initial * rule.max) / 100,
+      dailyBuffer: equity - floor,
+      maxBuffer: equity - maxFloor,
+      dailyUsed: calculateDailyLossUsed(
+        d.midnight,
+        equity,
+        (initial * rule.daily) / 100,
+      ),
+      maxUsed: calculateMaximumLossUsed(initial, equity, rule.max),
+      initialDD: calculatePeakDrawdown(initial, equity),
+      peakDD: calculatePeakDrawdown(peak, equity),
+      dailyLossPercent: (Math.max(0, d.midnight - equity) / initial) * 100,
+      worstDailyLossPercent:
+        (Math.max(0, d.midnight - Math.min(equity, d.lowest ?? equity)) /
+          initial) *
+        100,
+      violation,
+      dailyViolation,
+      maxViolation,
+      events,
+      cooldown,
+      fullReview,
+      stats,
+      tradingDays,
+      closed,
+      retainedStop: !!state.observed?.stops?.includes(asOf),
+    };
+    result.profit = calculateProfitProgress(
+      d.balance,
+      initial,
+      rule.target,
+      closed,
+      tradingDays,
+      rule.days,
+    );
+    result.internal = calculateInternalRiskStatus(result);
+    result.ftmoStatus = violation
+      ? "RULE VIOLATION"
+      : !result.fresh || !result.coverage
+        ? "UNCONFIRMED"
+        : result.profit.pass
+          ? "PASS"
+          : "SAFE";
+    return result;
+  }
+  function calculateNextTradeProjection(
+    s,
+    {
+      grade,
+      riskPercent,
+      distance,
+      tickSize,
+      tickValue,
+      lotStep = 0.01,
+      cost = 0,
+      balance = s.balance,
+      equity = s.equity,
+    },
+  ) {
+    const t = s.rules.tony,
+      limit = Math.min(
+        s.internal.maxRisk,
+        grade === "A+" && t.allowPlus ? t.riskPlus : t.riskA,
+      );
+    const amount = (s.initial * riskPercent) / 100;
+    const projected = Math.min(equity, s.equity) - amount - cost;
+    const rawLots =
+      distance > 0 && tickSize > 0 && tickValue > 0
+        ? amount / ((distance / tickSize) * tickValue)
+        : null;
+    const lots =
+      rawLots === null || lotStep <= 0
+        ? null
+        : Math.floor((rawLots + 1e-12) / lotStep) * lotStep;
+    const dailyBuffer = projected - s.floor,
+      maxBuffer = projected - s.maxFloor,
+      dailyPercent = (Math.max(0, s.d.midnight - projected) / s.initial) * 100,
+      totalPercent = (Math.max(0, s.initial - projected) / s.initial) * 100,
+      peakDD = calculatePeakDrawdown(s.peak, projected);
+    const reasons = [];
+    if (s.internal.level === "STOP") reasons.push(...s.internal.reasons);
+    if (["B", "No Trade"].includes(grade))
+      reasons.push("B / No Trade: Risk = 0");
+    if (riskPercent <= 0 || riskPercent > limit)
+      reasons.push(`Risk ต้องมากกว่า 0 และไม่เกิน ${limit}%`);
+    if (dailyBuffer <= 0 || maxBuffer <= 0)
+      reasons.push("Projected Equity ชน FTMO Floor");
+    if (
+      dailyPercent >= t.dailyStop ||
+      totalPercent >= t.pause ||
+      peakDD >= t.pause
+    )
+      reasons.push("FTMO ยังอนุญาต แต่ Tony Risk Rule = STOP");
+    if (
+      (totalPercent >= t.reduce || peakDD >= t.reduce) &&
+      riskPercent > t.reducedRisk
+    )
+      reasons.push("Projected Drawdown ต้องลด Risk");
+    if (lots === null || lots <= 0)
+      reasons.push(
+        "กรอก MT5 Contract Specification ให้ครบ / Lot เล็กกว่าขั้นต่ำ",
+      );
+    if (balance !== s.balance || equity !== s.equity)
+      reasons.push(
+        "ค่าจำลองต่างจากข้อมูลปัจจุบัน: ต้องบันทึก Daily Entry ก่อนยืนยัน",
+      );
+    return {
+      amount,
+      rawLots,
+      lots,
+      projected,
+      dailyBuffer,
+      maxBuffer,
+      dailyPercent,
+      totalPercent,
+      tonyRemaining: Math.max(
+        0,
+        (s.initial * t.dailyStop) / 100 - Math.max(0, s.d.midnight - s.equity),
+      ),
+      limit,
+      allowed: reasons.length === 0,
+      reasons,
+    };
+  }
+  function weeklyReview(state, from, to) {
+    const ds = state.daily
+        .filter((d) => d.date >= from && d.date <= to)
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      ts = state.trades.filter(
+        (t) =>
+          t.close &&
+          dateInZone(t.close) >= from &&
+          dateInZone(t.close) <= to &&
+          t.grade !== "No Trade",
+      ),
+      opens = state.trades.filter(
+        (t) =>
+          dateInZone(t.open) >= from &&
+          dateInZone(t.open) <= to &&
+          t.grade !== "No Trade",
+      );
+    const wins = ts.filter((t) => netTrade(t) > 0).length,
+      losses = ts.filter((t) => netTrade(t) < 0).length;
+    const net = ts.reduce((s, t) => s + netTrade(t), 0),
+      rs = ts.filter((t) => t.risk > 0).map((t) => netTrade(t) / t.risk);
+    const setup = ["A+", "A", "B"].map((grade) => {
+      const trades = ts.filter((t) => t.grade === grade);
+      return {
+        grade,
+        count: trades.length,
+        net: trades.reduce((s, t) => s + netTrade(t), 0),
+      };
+    });
+    let maxDD = 0;
+    ds.forEach((d) => {
+      const s = snapshot(state, d.date);
+      maxDD = Math.max(
+        maxDD,
+        calculatePeakDrawdown(s.peak, Math.min(s.equity, d.lowest ?? s.equity)),
+      );
+    });
+    const last = snapshot(state, to);
+    return {
+      count: ts.length,
+      opened: opens.length,
+      wins,
+      losses,
+      winRate: ts.length ? (wins / ts.length) * 100 : 0,
+      net,
+      netPercent: (net / state.account.initial) * 100,
+      netR: rs.reduce((a, b) => a + b, 0),
+      avgR: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null,
+      avgRisk: opens.length
+        ? opens.reduce(
+            (s, t) => s + (t.risk / state.account.initial) * 100,
+            0,
+          ) / opens.length
+        : null,
+      maxDD,
+      lowest: ds.length
+        ? Math.min(
+            ...ds.map((d) => Math.min(equityOf(d), d.lowest ?? Infinity)),
+          )
+        : null,
+      setup,
+      best:
+        setup.filter((s) => s.count).sort((a, b) => b.net - a.net)[0]?.grade ||
+        "—",
+      violations:
+        last.events.filter((e) => e.date >= from).length +
+        ts.filter((t) => t.violation).length,
+      noTrade: ds.filter(
+        (d) => !d.opened && !opens.some((t) => dateInZone(t.open) === d.date),
+      ).length,
+      days: calculateTradingDays(opens, ds, state.account.startDate),
+      progress: last.profit.progress,
+      manualNet: ds.reduce((s, d) => s + d.realised, 0),
+    };
+  }
+  const api = {
+    PHASES,
+    defaults,
+    dateInZone,
+    zonedInstant,
+    resetInstant,
+    calculateEquity,
+    calculateDailyLossLimit,
+    dailyFloor,
+    calculateDailyLossUsed,
+    calculateDailyBuffer,
+    calculateMaximumLossLimit,
+    calculateMaximumLossUsed,
+    calculateMaximumLossBuffer,
+    calculatePeakDrawdown,
+    calculateProfitProgress,
+    calculateTradingDays,
+    tradingDates,
+    equityOf,
+    dayStats,
+    netTrade,
+    snapshot,
+    calculateInternalRiskStatus,
+    calculateNextTradeProjection,
+    weeklyReview,
+  };
+  root.Calc = api;
+  if (typeof module !== "undefined") module.exports = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+</script>
+    <script>
+(function (root) {
+  "use strict";
+  const KEY = "tony-ftmo-tracker-v1";
+  const finite = (x) =>
+    typeof x === "number" && Number.isFinite(x) && Math.abs(x) < 1e12;
+  const date = (x) =>
+    typeof x === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(x) &&
+    !isNaN(Date.parse(x)) &&
+    new Date(x).toISOString().slice(0, 10) === x;
+  const text = (x, max = 10000) => typeof x === "string" && x.length <= max;
+  function validate(s) {
+    const fail = () => {
+      throw Error(
+        "รูปแบบ Backup ไม่ถูกต้อง หรือมีค่า Rules / ตัวเลข / วันที่ที่ไม่ปลอดภัย",
+      );
+    };
+    if (
+      !s ||
+      s.version !== 1 ||
+      !s.account ||
+      !s.rules ||
+      !Array.isArray(s.daily) ||
+      !Array.isArray(s.trades) ||
+      s.daily.length > 20000 ||
+      s.trades.length > 100000
+    )
+      fail();
+    const a = s.account,
+      t = s.rules.tony;
+    if (
+      !text(a.name, 200) ||
+      !a.name.trim() ||
+      a.type !== "FTMO 2-Step" ||
+      !Calc.PHASES.includes(a.phase) ||
+      !finite(a.initial) ||
+      a.initial <= 0 ||
+      !date(a.startDate) ||
+      !text(a.timezone, 100) ||
+      !a.timezone
+    )
+      fail();
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: a.timezone }).format();
+    } catch {
+      fail();
+    }
+    if (!date(s.rules.verified) || !t) fail();
+    for (const phase of Calc.PHASES) {
+      const r = s.rules.phases?.[phase];
+      if (
+        !r ||
+        !["daily", "max"].every((k) => finite(r[k]) && r[k] > 0 && r[k] < 100)
+      )
+        fail();
+      if (phase === "FTMO Account") {
+        if (r.target !== null || r.days !== null) fail();
+      } else if (
+        !finite(r.target) ||
+        r.target <= 0 ||
+        !Number.isInteger(r.days) ||
+        r.days < 0 ||
+        r.days > 365
+      )
+        fail();
+    }
+    for (const k of [
+      "riskA",
+      "riskPlus",
+      "maxRisk",
+      "dailyStop",
+      "reduce",
+      "pause",
+      "review",
+      "reducedRisk",
+    ])
+      if (!finite(t[k]) || t[k] <= 0 || t[k] >= 100) fail();
+    if (
+      !(t.reduce < t.pause && t.pause < t.review) ||
+      typeof t.allowPlus !== "boolean" ||
+      !["trades", "losses"].every(
+        (k) => Number.isInteger(t[k]) && t[k] > 0 && t[k] < 1000,
+      )
+    )
+      fail();
+    const ids = new Set(),
+      dates = new Set();
+    for (const d of s.daily) {
+      if (
+        !date(d.date) ||
+        d.date < a.startDate ||
+        dates.has(d.date) ||
+        !["manual", "calculate"].includes(d.mode)
+      )
+        fail();
+      dates.add(d.date);
+      for (const k of [
+        "midnight",
+        "starting",
+        "balance",
+        "equity",
+        "floating",
+        "realised",
+        "commission",
+        "swap",
+        "risk",
+        "trades",
+        "wins",
+        "losses",
+        "consecutive",
+      ])
+        if (!finite(d[k])) fail();
+      for (const k of ["lowest", "peak"])
+        if (d[k] !== null && !finite(d[k])) fail();
+      if (
+        (d.lowest !== null && d.lowest > Calc.equityOf(d)) ||
+        (d.peak !== null && d.peak < Calc.equityOf(d))
+      )
+        fail();
+      for (const k of [
+        "commission",
+        "risk",
+        "trades",
+        "wins",
+        "losses",
+        "consecutive",
+      ])
+        if (d[k] < 0) fail();
+      for (const k of ["trades", "wins", "losses", "consecutive"])
+        if (!Number.isInteger(d[k])) fail();
+      if (d.wins + d.losses > d.trades || d.consecutive > d.losses) fail();
+      for (const k of [
+        "opened",
+        "closed",
+        "internalViolation",
+        "manualViolation",
+        "reviewed",
+        "dailyViolation",
+        "maxViolation",
+      ])
+        if (typeof d[k] !== "boolean") fail();
+      for (const k of ["notes", "emotion", "violationNotes"])
+        if (!text(d[k])) fail();
+    }
+    for (const tr of s.trades) {
+      if (
+        !text(tr.id, 100) ||
+        !tr.id.trim() ||
+        ids.has(tr.id) ||
+        !text(tr.symbol, 100) ||
+        !["A+", "A", "B", "No Trade"].includes(tr.grade) ||
+        !["Buy", "Sell"].includes(tr.side)
+      )
+        fail();
+      ids.add(tr.id);
+      if (
+        !text(tr.open, 30) ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(tr.open) ||
+        isNaN(Date.parse(tr.open)) ||
+        new Date(tr.open).toISOString() !== tr.open ||
+        Calc.dateInZone(tr.open) < a.startDate
+      )
+        fail();
+      if (
+        tr.close !== null &&
+        (!text(tr.close, 30) ||
+          !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(tr.close) ||
+          isNaN(Date.parse(tr.close)) ||
+          new Date(tr.close).toISOString() !== tr.close ||
+          tr.close < tr.open)
+      )
+        fail();
+      for (const k of [
+        "entry",
+        "sl",
+        "tp",
+        "lot",
+        "risk",
+        "pnl",
+        "commission",
+        "swap",
+      ])
+        if (!finite(tr[k])) fail();
+      if (tr.lot < 0 || tr.risk < 0 || tr.commission < 0) fail();
+      if (
+        typeof tr.followed !== "boolean" ||
+        typeof tr.violation !== "boolean" ||
+        !text(tr.notes)
+      )
+        fail();
+    }
+    if (s.audit === undefined) s.audit = [];
+    if (!Array.isArray(s.audit) || s.audit.length > 40000) fail();
+    for (const e of s.audit)
+      if (
+        !date(e.date) ||
+        !["daily", "max", "manual"].every((k) => typeof e[k] === "boolean")
+      )
+        fail();
+    if (s.observed === undefined)
+      s.observed = {
+        peak: null,
+        low: null,
+        pauseDate: null,
+        fullReview: false,
+        stops: [],
+      };
+    const o = s.observed;
+    if (
+      !o ||
+      !["peak", "low"].every((k) => o[k] === null || finite(o[k])) ||
+      (o.pauseDate !== null && !date(o.pauseDate)) ||
+      typeof o.fullReview !== "boolean" ||
+      !Array.isArray(o.stops) ||
+      o.stops.length > 20000 ||
+      !o.stops.every(date)
+    )
+      fail();
+    if (!["dark", "light"].includes(s.theme)) fail();
+    return s;
+  }
+  function load() {
+    const raw = localStorage.getItem(KEY);
+    return raw ? validate(JSON.parse(raw)) : Calc.defaults();
+  }
+  function save(s) {
+    validate(s);
+    localStorage.setItem(KEY, JSON.stringify(s));
+  }
+  function download(name, body, type) {
+    const url = URL.createObjectURL(new Blob([body], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function csv(rows) {
+    return (
+      "\uFEFF" +
+      rows
+        .map((row) =>
+          row
+            .map((v) => {
+              let s = String(v ?? "");
+              if (/^[=+@\-\t\r]/.test(s) && typeof v !== "number") s = "'" + s;
+              return '"' + s.replaceAll('"', '""') + '"';
+            })
+            .join(","),
+        )
+        .join("\r\n")
+    );
+  }
+  const api = { KEY, validate, load, save, download, csv };
+  root.Store = api;
+  if (typeof module !== "undefined") module.exports = api;
+})(typeof globalThis !== "undefined" ? globalThis : this);
+
+</script>
+    <script>
 "use strict";
 const C = Calc,
   S = Store,
@@ -1594,3 +3306,7 @@ window.addEventListener("storage", (e) => {
   }
 });
 render();
+
+</script>
+  </body>
+</html>
