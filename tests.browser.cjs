@@ -63,6 +63,24 @@ const cleanup = async () => {
   assert.ok((await page.locator("#app").textContent()).includes("$10,300.00"));
   await page.reload();
   assert.ok((await page.locator("#app").textContent()).includes("$4,300.00"));
+  const currentCard = page
+    .locator(".card")
+    .filter({
+      has: page.getByText("Current Daily Loss Usage", { exact: true }),
+    });
+  const worstCard = page
+    .locator(".card")
+    .filter({
+      has: page.getByText("Worst Daily Loss Usage Today", { exact: true }),
+    });
+  assert.ok((await currentCard.textContent()).includes("14.00%"));
+  assert.ok((await worstCard.textContent()).includes("16.00%"));
+  assert.ok(
+    (await page.locator("#app").textContent()).includes(
+      "Free Trial Day 1 / 14",
+    ),
+  );
+
   await page.screenshot({
     path: path.join(output, "ftmo-desktop.png"),
     fullPage: true,
@@ -122,6 +140,21 @@ const cleanup = async () => {
   assert.ok(
     (await page.locator("#projection").textContent()).includes("0.830000"),
   );
+  await page.locator('[name="cost"]').fill("10");
+  const budgetPanel = await page.locator("#projection").textContent();
+  assert.ok(
+    budgetPanel.includes("Price Risk Budget") &&
+      budgetPanel.includes("$240.00"),
+  );
+  assert.ok(
+    budgetPanel.includes("0.800000") && budgetPanel.includes("$99,750.00"),
+  );
+  assert.ok(budgetPanel.includes("WITHIN RISK PLAN"));
+  await page.locator('[name="cost"]').fill("250");
+  assert.ok(
+    (await page.locator("#projection").textContent()).includes("DO NOT TRADE"),
+  );
+  await page.locator('[name="cost"]').fill("0");
   await page.locator('[name="grade"]').selectOption("B");
   assert.ok(
     (await page.locator("#projection").textContent()).includes("DO NOT TRADE"),
@@ -243,6 +276,40 @@ const cleanup = async () => {
       "DO NOT TRADE",
     ),
   );
+
+  for (const phase of ["Challenge", "Verification", "FTMO Account"]) {
+    await standalone.evaluate((phase) => {
+      const s = Calc.defaults();
+      s.account.phase = phase;
+      Store.save(s);
+    }, phase);
+    await standalone.goto(base + "/FTMO-Tracker.html#dashboard");
+    await standalone.reload();
+    assert.ok(
+      !(await standalone.locator("#app").textContent()).includes(
+        "Free Trial Day",
+      ),
+    );
+  }
+  await standalone.evaluate(() => {
+    const s = Calc.defaults();
+    const current = Calc.dateInZone(new Date());
+    const start = new Date(current + "T00:00:00Z");
+    start.setUTCDate(start.getUTCDate() - 14);
+    s.account.startDate = start.toISOString().slice(0, 10);
+    Store.save(s);
+  });
+  await standalone.reload();
+  assert.ok(
+    (await standalone.locator("#app").textContent()).includes(
+      "Free Trial Day 15 / 14",
+    ),
+  );
+  assert.equal(
+    await standalone.evaluate(() => Calc.snapshot(Store.load()).violation),
+    false,
+  );
+  assert.equal(await standalone.evaluate(() => Store.load().version), 1);
   await standalone.close();
   assert.deepEqual(errors, []);
   console.log(

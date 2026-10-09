@@ -1,6 +1,7 @@
 /* Shared pure rule engine: works in a browser opened via file:// and in Node tests. */
 (function (root) {
   "use strict";
+  const APP_VERSION = "1.1";
   const PHASES = ["Free Trial", "Challenge", "Verification", "FTMO Account"];
   const defaults = () => ({
     account: {
@@ -180,6 +181,35 @@
   function netTrade(t) {
     return t.pnl + t.swap - t.commission;
   }
+  function calculateWorstDailyLossUsage(midnight, equity, lowest, allowance) {
+    const worstEquityToday = Math.min(equity, lowest ?? equity);
+    const worstDailyLossUsed = Math.max(0, midnight - worstEquityToday);
+    return {
+      worstEquityToday,
+      worstDailyLossUsed,
+      worstDailyUsed: (worstDailyLossUsed / allowance) * 100,
+    };
+  }
+  function calculateFreeTrialCountdown(startDate, phase, now = new Date()) {
+    if (phase !== "Free Trial") return null;
+    const date =
+      typeof now === "string" && /^\d{4}-\d{2}-\d{2}$/.test(now)
+        ? now
+        : dateInZone(now);
+    // Subtract calendar-date ordinals, not elapsed hours: Prague has 23/25-hour DST days.
+    const elapsed = Math.round(
+      (Date.parse(date + "T00:00:00Z") - Date.parse(startDate + "T00:00:00Z")) /
+        86400000,
+    );
+    const day = Math.max(0, elapsed + 1);
+    return {
+      day,
+      totalDays: 14,
+      remaining: Math.max(0, 14 - day),
+      expired: elapsed >= 14,
+      started: elapsed >= 0,
+    };
+  }
   function dayStats(state, d) {
     const opened = state.trades.filter(
       (t) => t.grade !== "No Trade" && dateInZone(t.open) === d.date,
@@ -196,22 +226,28 @@
       d.risk,
       opened.reduce((s, t) => s + t.risk, 0),
     );
+    const allowedRisk = (trade) =>
+      (state.account.initial / 100) *
+      Math.min(
+        state.rules.tony.maxRisk,
+        ["B", "No Trade"].includes(trade.grade)
+          ? 0
+          : trade.grade === "A+" && state.rules.tony.allowPlus
+            ? state.rules.tony.riskPlus
+            : state.rules.tony.riskA,
+      );
     const breaches = opened.filter(
-      (t) =>
-        t.violation ||
-        !t.followed ||
-        (["B", "No Trade"].includes(t.grade) && t.risk > 0) ||
-        (t.risk / state.account.initial) * 100 >
-          Math.min(
-            state.rules.tony.maxRisk,
-            t.grade === "A+" && state.rules.tony.allowPlus
-              ? state.rules.tony.riskPlus
-              : state.rules.tony.riskA,
-          ),
+      (t) => t.violation || !t.followed || t.risk > allowedRisk(t),
     );
-    const increased = opened.some((t) =>
-      closed.some((p) => p.close <= t.open && netTrade(p) < 0 && p.lot < t.lot),
-    );
+    // Lot size changes with SL distance. Compare risk ceilings, never lot size.
+    const increased = opened.some((t) => {
+      const preceding = closed.filter((p) => p.close <= t.open).at(-1);
+      return (
+        preceding &&
+        netTrade(preceding) < 0 &&
+        t.risk > Math.min(allowedRisk(t), allowedRisk(preceding))
+      );
+    });
     return {
       count,
       risk,
@@ -257,7 +293,7 @@
       s.d.internalViolation ||
       s.retainedStop
     )
-      stop("ผิดแผน / Risk เกินกำหนด / เพิ่ม Lot หลังขาดทุน / กฎภายใน");
+      stop("ผิดแผน / Risk เกินกำหนด / เพิ่ม Risk หลังขาดทุน / กฎภายใน");
     if (s.violation) {
       stop("FTMO Loss Rule ถูกละเมิดแล้ว");
       decision = "FTMO RULE VIOLATED";
@@ -420,7 +456,19 @@
         (!t.close || dateInZone(t.close) > asOf),
     );
     const closed = d.closed && !openTrades;
+    const worstDaily = calculateWorstDailyLossUsage(
+      d.midnight,
+      equity,
+      d.lowest,
+      (initial * rule.daily) / 100,
+    );
     const result = {
+      ...worstDaily,
+      trial: calculateFreeTrialCountdown(
+        state.account.startDate,
+        state.account.phase,
+        asOf,
+      ),
       d,
       initial,
       rule,
@@ -499,10 +547,12 @@
         grade === "A+" && t.allowPlus ? t.riskPlus : t.riskA,
       );
     const amount = (s.initial * riskPercent) / 100;
-    const projected = Math.min(equity, s.equity) - amount - cost;
+    const priceRiskBudget = amount - cost;
+    const validCost = Number.isFinite(cost) && cost >= 0 && cost < amount;
+    const projected = Math.min(equity, s.equity) - amount;
     const rawLots =
-      distance > 0 && tickSize > 0 && tickValue > 0
-        ? amount / ((distance / tickSize) * tickValue)
+      validCost && distance > 0 && tickSize > 0 && tickValue > 0
+        ? priceRiskBudget / ((distance / tickSize) * tickValue)
         : null;
     const lots =
       rawLots === null || lotStep <= 0
@@ -514,6 +564,10 @@
       totalPercent = (Math.max(0, s.initial - projected) / s.initial) * 100,
       peakDD = calculatePeakDrawdown(s.peak, projected);
     const reasons = [];
+    if (!validCost)
+      reasons.push(
+        "Estimated Cost ต้องไม่ติดลบ และต้องน้อยกว่า Total Risk Budget",
+      );
     if (s.internal.level === "STOP") reasons.push(...s.internal.reasons);
     if (["B", "No Trade"].includes(grade))
       reasons.push("B / No Trade: Risk = 0");
@@ -542,6 +596,9 @@
       );
     return {
       amount,
+      totalRiskBudget: amount,
+      estimatedCost: cost,
+      priceRiskBudget,
       rawLots,
       lots,
       projected,
@@ -634,6 +691,9 @@
     };
   }
   const api = {
+    APP_VERSION,
+    calculateWorstDailyLossUsage,
+    calculateFreeTrialCountdown,
     PHASES,
     defaults,
     dateInZone,

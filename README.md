@@ -1,4 +1,4 @@
-# FTMO Risk & Objective Tracker
+# FTMO Risk & Objective Tracker — Version 1.1
 
 Local Web Application สำหรับ **Tony Funded Trader Project** ติดตามบัญชี FTMO **2-Step** ด้วยกฎและข้อมูลที่ผู้ใช้กรอก ไม่มี Buy/Sell Signal หรือการทำนายตลาด ไม่มี Backend, CDN, Analytics หรือ Runtime Package Dependency
 
@@ -23,6 +23,15 @@ py -m http.server 8000 --bind 127.0.0.1
 จากนั้นพิมพ์ `http://127.0.0.1:8000` ใน Browser หยุด Server ด้วย Ctrl+C บน Linux/macOS ใช้ `python3` แทน `py` ไม่มีการประมวลผลฝั่ง Server; Server นี้เพียงส่งไฟล์ HTML/CSS/JS
 
 ข้อมูลของ `file://` กับ Local Server เป็นคนละ Storage; ต้อง Export JSON แล้ว Import เมื่อต้องการย้ายวิธีเปิด ย้าย Browser ย้ายเครื่อง หรือเปลี่ยน Port ไม่ควรใช้ Incognito เพราะข้อมูลอาจหายเมื่อปิด Browser
+
+## Version 1.1: ความเข้ากันได้และสิ่งที่เพิ่ม
+
+- Application Version = **1.1**; Backup schema ยังคง `version: 1` และ localStorage key `tony-ftmo-tracker-v1` เดิม ไม่มีการ Migration, Reset หรือแก้ข้อมูลที่บันทึกไว้
+- คง FTMO 2-Step rules, Daily Floor / Static Maximum Floor, Equity checks, Intraday violation และประวัติ STOP/Violation เดิมทั้งหมด ผล STOP เก่าที่เคยบันทึกไว้ไม่ถูกล้างอัตโนมัติ เพราะไม่มีข้อมูลแยกสาเหตุเดิมครบถ้วน
+- **Current Daily Loss Usage** แสดงยอดจาก Equity ปัจจุบัน ส่วน **Worst Daily Loss Usage Today** ใช้ `Worst Equity = MIN(Current Equity, Lowest Equity Today)`, `Worst Loss Used = MAX(0, Midnight Balance − Worst Equity)`, `% = Worst Loss Used / Daily Allowance × 100` ไม่เปลี่ยนสูตรตรวจ Violation หากไม่มี Lowest ใช้ Current เป็นค่าขั้นต่ำที่ทราบและยังแสดงคำเตือนข้อมูลไม่ครบ
+- **Free Trial Day X / 14** และ **Calendar Days Remaining** แสดงเฉพาะ Free Trial นับวันตาม Europe/Prague รวมเสาร์/อาทิตย์ ไม่ใช่ Trading Days และไม่หารเวลาที่ผ่านจริงด้วย 24 ชั่วโมง จึงไม่คลาดเคลื่อนเมื่อ DST เปลี่ยน
+- วันเริ่มเป็น Day 1 / เหลือ 13 วันหลังวันนี้; Day 14 เหลือ 0 วัน แต่ยังไม่หมดจนเข้าวันถัดไป Day 15 ขึ้นข้อความหมดรอบ ไม่ถือเป็น FTMO Loss Rule Violation และไม่เพิ่ม Tony STOP จากวันหมดอายุ
+- คง `CNAME` เป็น `tracker.investinyourselfth.com` และใช้ GitHub Pages `main / (root)` เช่นเดิม
 
 ## Account & Rules
 
@@ -66,7 +75,7 @@ Gross P/L + Swap − Commission = Net P/L และ Net R = Net P/L / Risk (Risk
 
 Trade Log **ไม่แก้ Balance/Equity อัตโนมัติ** ต้องยืนยันยอดจริงใน Daily Entry เพื่อป้องกัน Double Count จำนวน Trades และ Risk รายวันใช้ค่าที่มากกว่าระหว่าง Daily Entry กับ Trade Log แทนการรวมซ้ำ
 
-Consecutive Losses ใช้ลำดับ Close Time และเก็บจำนวนสูงสุดในวันนั้นเพื่อ STOP หลังแพ้ติดกัน 2 ครั้ง แม้ภายหลังกลับมาชนะ ถ้าไม่มี Log ละเอียดให้กรอกจำนวนแพ้ติดกันเอง การเพิ่ม Lot หลัง Trade ขาดทุนในวันเดียวกันถูกตรวจอัตโนมัติ Martingale / Averaging / Revenge ที่ข้อมูลไม่พอต้อง Flag เอง
+Consecutive Losses ใช้ลำดับ Close Time และเก็บจำนวนสูงสุดในวันนั้นเพื่อ STOP หลังแพ้ติดกัน 2 ครั้ง แม้ภายหลังกลับมาชนะ ถ้าไม่มี Log ละเอียดให้กรอกจำนวนแพ้ติดกันเอง Increasing Risk after Loss ตรวจจาก Risk $ (ไม่ใช่ Lot): หลัง Closed Trade ล่าสุดในวันเดียวกันขาดทุน ถ้า Trade ถัดไปใช้ Risk เกินเพดาน Setup/Maximum Risk หรือเกินเพดาน Risk ที่อนุญาตของ Trade ก่อนหน้า จะ Flag เป็นการเพิ่ม Risk การเพิ่ม Lot จาก 0.20 เป็น 0.35 โดยคง Risk $250 ไม่ถือว่าผิดกฎ และการเพิ่ม Risk จากค่าที่ลดไว้กลับขึ้นมาภายในเพดานเดิมไม่ถูกอนุมานเป็น Revenge Trading Martingale / Averaging / Revenge ที่ข้อมูลไม่พอต้อง Flag เอง
 
 ## สูตรและเกณฑ์สำคัญ
 
@@ -106,12 +115,13 @@ Default A/A+ สูงสุด 0.25% ($250 เมื่อทุนเริ่
 Planner ต้องกรอก Stop Distance (Price Units), Tick Size, Tick Value USD ต่อ 1 lot และ Lot Step จาก MT5 Contract Specification ไม่ Assume XAUUSD:
 
 ```text
-Risk $ = Initial × Risk % / 100
-Lots = Risk $ / (Stop Distance / Tick Size × Tick Value)
-Projected Equity = Current Equity − Risk $ − Cost Reserve
+Total Risk Budget = Initial × Risk % / 100
+Price Risk Budget = Total Risk Budget − Estimated Trading Cost
+Lots = Price Risk Budget / (Stop Distance / Tick Size × Tick Value)
+Projected Equity = Current Equity − Total Risk Budget
 ```
 
-Lot ปัดลงตาม Step; Buffer ใช้ Risk เต็มที่เสนอ เผื่อ Extra Cost/Slippage ได้ ถ้า Tick Value ไม่ใช่ USD ต้องแปลงให้ตรง Account Currency ก่อน หากค่า Balance/Equity จำลองต่างจาก Daily Entry จะไม่ยืนยันว่าพร้อมเทรด หาก SL ชน Tony Stop จะแสดง **DO NOT TRADE** แม้ไม่ชน FTMO Rule เป็นการจำลอง ไม่รับประกันราคา Fill
+Estimated Trading Cost รวม Commission / Swap / Slippage ภายใน Budget ต้องไม่ติดลบและน้อยกว่า Total Risk Budget ถ้า Budget $250 และ Cost $10 จะใช้ $240 คำนวณ Lot โดย Projected Loss รวมต้นทุนยังเป็น $250 ไม่ใช่ $260 Lot ปัดลงตาม Step; Buffer ใช้ Total Risk Budget เต็มที่เสนอเพื่อความระมัดระวัง ถ้า Tick Value ไม่ใช่ USD ต้องแปลงให้ตรง Account Currency ก่อน หากค่า Balance/Equity จำลองต่างจาก Daily Entry จะไม่ยืนยันว่าพร้อมเทรด หาก SL ชน Tony Stop จะแสดง **DO NOT TRADE** แม้ไม่ชน FTMO Rule เป็นการจำลอง ไม่รับประกันราคา Fill
 
 ## Backup / Restore / Export / Reset
 
@@ -139,7 +149,7 @@ Lot ปัดลงตาม Step; Buffer ใช้ Risk เต็มที่�
 node --test tests.js
 ```
 
-ครอบคลุมตัวอย่าง $100K, 6 edge cases, Equity/Costs, Intraday recovery, Latched violation, Profit/Days/Open positions, DST/Timezone, Tony stop/drawdown/cooldown, Position sizing, Weekly calculations, JSON validation และ CSV escaping
+ครอบคลุมสูตร Version 1.1: Cost-inclusive Risk Budget / Cost validation / Lot rounding, Increasing Risk after Loss, Current/Worst Daily Usage, Free Trial countdown / DST / phase-specific display / expiration และ Backward Compatibility พร้อมตัวอย่าง $100K, 6 edge cases, Equity/Costs, Intraday recovery, Latched violation, Profit/Days/Open positions, DST/Timezone, Tony stop/drawdown/cooldown, Position sizing, Weekly calculations, JSON validation และ CSV escaping
 
 Demo ใน Dashboard จะ **แทนที่ข้อมูลบัญชี** ต้อง Backup ก่อน ผลที่ต้องได้:
 

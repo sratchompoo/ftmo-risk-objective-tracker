@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <title>FTMO Risk & Objective Tracker — Tony</title>
+    <title>FTMO Risk & Objective Tracker v1.1 — Tony</title>
     <style>
 :root {
   --bg: #0e141b;
@@ -777,7 +777,7 @@ details summary {
         >
         <div id="app"></div>
         <footer>
-          FTMO Risk & Objective Tracker · Tony Funded Trader Project ·
+          FTMO Risk & Objective Tracker v1.1 · Tony Funded Trader Project ·
           คำนวณจากข้อมูลที่คุณบันทึกเท่านั้น
         </footer>
       </main>
@@ -786,6 +786,7 @@ details summary {
 /* Shared pure rule engine: works in a browser opened via file:// and in Node tests. */
 (function (root) {
   "use strict";
+  const APP_VERSION = "1.1";
   const PHASES = ["Free Trial", "Challenge", "Verification", "FTMO Account"];
   const defaults = () => ({
     account: {
@@ -965,6 +966,35 @@ details summary {
   function netTrade(t) {
     return t.pnl + t.swap - t.commission;
   }
+  function calculateWorstDailyLossUsage(midnight, equity, lowest, allowance) {
+    const worstEquityToday = Math.min(equity, lowest ?? equity);
+    const worstDailyLossUsed = Math.max(0, midnight - worstEquityToday);
+    return {
+      worstEquityToday,
+      worstDailyLossUsed,
+      worstDailyUsed: (worstDailyLossUsed / allowance) * 100,
+    };
+  }
+  function calculateFreeTrialCountdown(startDate, phase, now = new Date()) {
+    if (phase !== "Free Trial") return null;
+    const date =
+      typeof now === "string" && /^\d{4}-\d{2}-\d{2}$/.test(now)
+        ? now
+        : dateInZone(now);
+    // Subtract calendar-date ordinals, not elapsed hours: Prague has 23/25-hour DST days.
+    const elapsed = Math.round(
+      (Date.parse(date + "T00:00:00Z") - Date.parse(startDate + "T00:00:00Z")) /
+        86400000,
+    );
+    const day = Math.max(0, elapsed + 1);
+    return {
+      day,
+      totalDays: 14,
+      remaining: Math.max(0, 14 - day),
+      expired: elapsed >= 14,
+      started: elapsed >= 0,
+    };
+  }
   function dayStats(state, d) {
     const opened = state.trades.filter(
       (t) => t.grade !== "No Trade" && dateInZone(t.open) === d.date,
@@ -981,22 +1011,28 @@ details summary {
       d.risk,
       opened.reduce((s, t) => s + t.risk, 0),
     );
+    const allowedRisk = (trade) =>
+      (state.account.initial / 100) *
+      Math.min(
+        state.rules.tony.maxRisk,
+        ["B", "No Trade"].includes(trade.grade)
+          ? 0
+          : trade.grade === "A+" && state.rules.tony.allowPlus
+            ? state.rules.tony.riskPlus
+            : state.rules.tony.riskA,
+      );
     const breaches = opened.filter(
-      (t) =>
-        t.violation ||
-        !t.followed ||
-        (["B", "No Trade"].includes(t.grade) && t.risk > 0) ||
-        (t.risk / state.account.initial) * 100 >
-          Math.min(
-            state.rules.tony.maxRisk,
-            t.grade === "A+" && state.rules.tony.allowPlus
-              ? state.rules.tony.riskPlus
-              : state.rules.tony.riskA,
-          ),
+      (t) => t.violation || !t.followed || t.risk > allowedRisk(t),
     );
-    const increased = opened.some((t) =>
-      closed.some((p) => p.close <= t.open && netTrade(p) < 0 && p.lot < t.lot),
-    );
+    // Lot size changes with SL distance. Compare risk ceilings, never lot size.
+    const increased = opened.some((t) => {
+      const preceding = closed.filter((p) => p.close <= t.open).at(-1);
+      return (
+        preceding &&
+        netTrade(preceding) < 0 &&
+        t.risk > Math.min(allowedRisk(t), allowedRisk(preceding))
+      );
+    });
     return {
       count,
       risk,
@@ -1042,7 +1078,7 @@ details summary {
       s.d.internalViolation ||
       s.retainedStop
     )
-      stop("ผิดแผน / Risk เกินกำหนด / เพิ่ม Lot หลังขาดทุน / กฎภายใน");
+      stop("ผิดแผน / Risk เกินกำหนด / เพิ่ม Risk หลังขาดทุน / กฎภายใน");
     if (s.violation) {
       stop("FTMO Loss Rule ถูกละเมิดแล้ว");
       decision = "FTMO RULE VIOLATED";
@@ -1205,7 +1241,19 @@ details summary {
         (!t.close || dateInZone(t.close) > asOf),
     );
     const closed = d.closed && !openTrades;
+    const worstDaily = calculateWorstDailyLossUsage(
+      d.midnight,
+      equity,
+      d.lowest,
+      (initial * rule.daily) / 100,
+    );
     const result = {
+      ...worstDaily,
+      trial: calculateFreeTrialCountdown(
+        state.account.startDate,
+        state.account.phase,
+        asOf,
+      ),
       d,
       initial,
       rule,
@@ -1284,10 +1332,12 @@ details summary {
         grade === "A+" && t.allowPlus ? t.riskPlus : t.riskA,
       );
     const amount = (s.initial * riskPercent) / 100;
-    const projected = Math.min(equity, s.equity) - amount - cost;
+    const priceRiskBudget = amount - cost;
+    const validCost = Number.isFinite(cost) && cost >= 0 && cost < amount;
+    const projected = Math.min(equity, s.equity) - amount;
     const rawLots =
-      distance > 0 && tickSize > 0 && tickValue > 0
-        ? amount / ((distance / tickSize) * tickValue)
+      validCost && distance > 0 && tickSize > 0 && tickValue > 0
+        ? priceRiskBudget / ((distance / tickSize) * tickValue)
         : null;
     const lots =
       rawLots === null || lotStep <= 0
@@ -1299,6 +1349,10 @@ details summary {
       totalPercent = (Math.max(0, s.initial - projected) / s.initial) * 100,
       peakDD = calculatePeakDrawdown(s.peak, projected);
     const reasons = [];
+    if (!validCost)
+      reasons.push(
+        "Estimated Cost ต้องไม่ติดลบ และต้องน้อยกว่า Total Risk Budget",
+      );
     if (s.internal.level === "STOP") reasons.push(...s.internal.reasons);
     if (["B", "No Trade"].includes(grade))
       reasons.push("B / No Trade: Risk = 0");
@@ -1327,6 +1381,9 @@ details summary {
       );
     return {
       amount,
+      totalRiskBudget: amount,
+      estimatedCost: cost,
+      priceRiskBudget,
       rawLots,
       lots,
       projected,
@@ -1419,6 +1476,9 @@ details summary {
     };
   }
   const api = {
+    APP_VERSION,
+    calculateWorstDailyLossUsage,
+    calculateFreeTrialCountdown,
     PHASES,
     defaults,
     dateInZone,
@@ -1842,6 +1902,9 @@ function dashboard() {
       `<div class="reset-time"><span class="badge ${s.ftmoStatus === "RULE VIOLATION" ? "RULE" : s.ftmoStatus}">${s.ftmoStatus}</span><p>FTMO reset วันนี้: ${fmtTime(C.resetInstant(today()))}<br>${esc(state.account.timezone)} · 00:00 Europe/Prague</p></div>`,
     ) +
     warnings(s) +
+    (s.trial
+      ? `<div class="panel"><div class="actions"><strong>Free Trial Day ${s.trial.day} / 14</strong><span class="muted">Calendar Days Remaining: ${s.trial.remaining} · นับวัน Europe/Prague</span></div>${s.trial.expired ? '<p class="negative">Free Trial ครบ 14 วันแล้ว — ไม่ใช่ FTMO Loss Rule Violation</p>' : !s.trial.started ? '<p class="muted">ยังไม่ถึง Account Start Date</p>' : ""}</div>`
+      : "") +
     `<div class="metrics">${[
       ["Current Balance", money(s.balance)],
       ["Current Equity", money(s.equity)],
@@ -1876,10 +1939,17 @@ function dashboard() {
       s.rule.days ? (s.tradingDays / s.rule.days) * 100 : null,
     ) +
     card(
-      "FTMO Daily Loss Usage",
+      "Current Daily Loss Usage",
       pct(s.dailyUsed),
       `<span>Used ${money(Math.max(0, s.d.midnight - s.equity))}</span><span>/ ${money(s.dailyAmount)}</span>`,
       s.dailyUsed,
+      s.dailyViolation,
+    ) +
+    card(
+      "Worst Daily Loss Usage Today",
+      pct(s.worstDailyUsed),
+      `<span>Used ${money(s.worstDailyLossUsed)}</span><span>Worst Equity ${money(s.worstEquityToday)}${s.d.lowest === null ? " (ไม่มี Lowest Intraday)" : ""}</span>`,
+      s.worstDailyUsed,
       s.dailyViolation,
     ) +
     card(
@@ -1923,7 +1993,7 @@ function dashboard() {
         ["พัก 1 trading day / Review 10 trades", pct(t.pause)],
         ["Full Review Required", pct(t.review)],
       ],
-    )}<p class="muted">ใช้เกณฑ์ที่เข้มกว่าระหว่าง Drawdown จาก Initial และ Peak · No Martingale / No Averaging Loss / No Revenge Trading / No increasing Lot after Loss</p></div><div class="panel"><h2>Daily Planning Summary</h2>${summary(
+    )}<p class="muted">ใช้เกณฑ์ที่เข้มกว่าระหว่าง Drawdown จาก Initial และ Peak · No Martingale / No Averaging Loss / No Revenge Trading / No Increasing Risk after Loss</p></div><div class="panel"><h2>Daily Planning Summary</h2>${summary(
       [
         ["FTMO Status", s.ftmoStatus],
         ["Lowest Equity Today", money(s.d.lowest)],
@@ -2256,7 +2326,7 @@ function daily() {
     check("Opened New Position Today?", "opened", d.opened) +
     check("All Positions Closed?", "closed", d.closed) +
     check(
-      "Tony Rule Violation (Martingale / Averaging / Revenge / เพิ่ม Lot)",
+      "Tony Rule Violation (Martingale / Averaging / Revenge / เพิ่ม Risk)",
       "internalViolation",
       d.internalViolation,
     ) +
@@ -2493,14 +2563,14 @@ function planner() {
       'required min="0.00000001"',
     ) +
     field(
-      "Extra Cost / Slippage Reserve $",
+      "Estimated Trading Cost $",
       "cost",
       0,
       "number",
-      "เผื่อ Commission / Swap / Slippage ของ Trade ใหม่",
+      "รวม Commission / Swap / Slippage ภายใน Total Risk Budget",
       'required min="0"',
     ) +
-    `</div></form><div id="projection" class="panel" aria-live="polite"></div></div><div class="panel"><h2>Position Size Formula</h2><div class="formula">Risk $ = Initial Capital × Risk % / 100<br>Lot Size = Risk $ ÷ (Stop Loss Distance ÷ Tick Size × Tick Value)<br>Projected Equity = Current Equity − Risk $ − Extra Cost Reserve</div><p class="muted">เป็นการจำลอง ไม่รับประกันราคา Fill หรือ Slippage · การปัดลงลด Risk แต่ Buffer ใช้ Risk ที่เสนอเต็มจำนวนเพื่อความระมัดระวัง · หากชน Tony Stop แสดง DO NOT TRADE แม้ยังไม่ชน FTMO Floor</p></div>`
+    `</div></form><div id="projection" class="panel" aria-live="polite"></div></div><div class="panel"><h2>Position Size Formula</h2><div class="formula">Total Risk Budget = Initial Capital × Risk % / 100<br>Price Risk Budget = Total Risk Budget − Estimated Trading Cost<br>Lot Size = Price Risk Budget ÷ (Stop Loss Distance ÷ Tick Size × Tick Value)<br>Projected Equity = Current Equity − Total Risk Budget</div><p class="muted">เป็นการจำลอง ไม่รับประกันราคา Fill หรือ Slippage · การปัดลงลด Risk แต่ Buffer ใช้ Risk ที่เสนอเต็มจำนวนเพื่อความระมัดระวัง · หากชน Tony Stop แสดง DO NOT TRADE แม้ยังไม่ชน FTMO Floor</p></div>`
   );
 }
 function updateProjection() {
@@ -2530,7 +2600,9 @@ function updateProjection() {
   $("#projection").innerHTML =
     `<div class="eyebrow">PROJECTED IF STOP LOSS HIT</div><h2 class="${p.allowed ? "positive" : "negative"}">${p.allowed ? "WITHIN RISK PLAN" : "DO NOT TRADE"}</h2><p class="${p.allowed ? "muted" : "negative"}">${p.reasons.map(esc).join(" · ") || "Buffer อยู่ในกฎที่ตั้งไว้ ตรวจสอบ Contract และแผนก่อนส่ง Order"}</p>${summary(
       [
-        ["Risk Proposed", money(p.amount)],
+        ["Total Risk Budget", money(p.totalRiskBudget)],
+        ["Estimated Trading Cost (รวมใน Budget)", money(p.estimatedCost)],
+        ["Price Risk Budget", money(p.priceRiskBudget)],
         [
           "Position Size (lot, ปัดลง)",
           p.lots === null ? "—" : p.lots.toFixed(6),

@@ -281,12 +281,18 @@ test("Two consecutive losses STOP even after subsequent win", () => {
 });
 test("Intraday Tony daily STOP survives equity recovery", () =>
   assert.equal(snap({ lowest: 99000 }).internal.level, "STOP"));
-test("No revenge / plan flags and increasing lot after loss STOP", () => {
+test("No revenge / plan flags and increasing risk after loss STOP", () => {
   const s = account();
   s.rules.tony.trades = 5;
   s.trades = [
     trade({ pnl: -250 }),
-    trade({ id: "T2", open: DAY + "T10:00:00.000Z", close: null, lot: 0.2 }),
+    trade({
+      id: "T2",
+      open: DAY + "T10:00:00.000Z",
+      close: null,
+      lot: 0.2,
+      risk: 300,
+    }),
   ];
   assert.equal(C.snapshot(s, DAY).stats.increased, true);
   assert.equal(C.snapshot(s, DAY).internal.level, "STOP");
@@ -412,7 +418,7 @@ test("Missing tick specification blocked; additional costs included", () => {
       tickValue: 1,
       cost: 10,
     }).projected,
-    99740,
+    99750,
   );
 });
 test("Weekly uses closed date, net costs, R and unique opens", () => {
@@ -501,4 +507,265 @@ test("Lowest since start alone below static floor always violates", () => {
   const x = C.snapshot(s);
   assert.equal(x.maxViolation, true);
   assert.equal(x.ftmoStatus, "RULE VIOLATION");
+});
+
+// Version 1.1 regressions. Stored records retain schema version 1.
+test("v1.1 total budget includes $10 cost; $240 sizes the position and $250 projects the loss", () => {
+  const s = snap();
+  const p = C.calculateNextTradeProjection(s, {
+    grade: "A",
+    riskPercent: 0.25,
+    distance: 3,
+    tickSize: 0.01,
+    tickValue: 1,
+    lotStep: 0.01,
+    cost: 10,
+  });
+  assert.equal(p.totalRiskBudget, 250);
+  assert.equal(p.amount, 250); // Preserve the existing engine return-field alias.
+  assert.equal(p.estimatedCost, 10);
+  assert.equal(p.priceRiskBudget, 240);
+  assert.equal(p.rawLots, 0.8);
+  assert.ok(Math.abs(p.lots - 0.8) < 1e-10);
+  assert.equal(p.projected, 99750);
+  assert.equal(p.dailyBuffer, 4750);
+  assert.equal(p.maxBuffer, 9750);
+  assert.equal(p.allowed, true);
+  assert.ok(
+    p.lots * ((3 / 0.01) * 1) + p.estimatedCost <= p.totalRiskBudget + 1e-9,
+  );
+});
+test("v1.1 zero-cost budget preserves existing position sizing", () => {
+  const p = C.calculateNextTradeProjection(snap(), {
+    grade: "A",
+    riskPercent: 0.25,
+    distance: 3,
+    tickSize: 0.01,
+    tickValue: 1,
+    cost: 0,
+  });
+  assert.equal(p.priceRiskBudget, 250);
+  assert.ok(Math.abs(p.lots - 0.83) < 1e-10);
+  assert.equal(p.projected, 99750);
+});
+test("v1.1 cost equal to or exceeding the total budget, negative or nonfinite cost is rejected", () => {
+  for (const cost of [250, 251, -1, NaN, Infinity]) {
+    const p = C.calculateNextTradeProjection(snap(), {
+      grade: "A",
+      riskPercent: 0.25,
+      distance: 3,
+      tickSize: 0.01,
+      tickValue: 1,
+      cost,
+    });
+    assert.equal(p.allowed, false);
+    assert.equal(p.lots, null);
+    assert.ok(p.reasons.some((r) => r.includes("Estimated Cost")));
+  }
+});
+test("v1.1 rounding lots downward preserves the total cost-inclusive risk ceiling", () => {
+  const p = C.calculateNextTradeProjection(snap(), {
+    grade: "A",
+    riskPercent: 0.25,
+    distance: 7,
+    tickSize: 0.01,
+    tickValue: 1,
+    cost: 10,
+  });
+  assert.ok(Math.abs(p.lots - 0.34) < 1e-10);
+  assert.ok(p.lots * 700 + 10 <= 250);
+  assert.equal(p.projected, 99750);
+});
+test("v1.1 larger lot after a loss with the same $250 risk is allowed", () => {
+  const s = account();
+  s.rules.tony.trades = 5;
+  s.trades = [
+    trade({ lot: 0.2, risk: 250, pnl: -250 }),
+    trade({
+      id: "T2",
+      open: DAY + "T10:00:00.000Z",
+      close: null,
+      lot: 0.35,
+      risk: 250,
+    }),
+  ];
+  const x = C.snapshot(s, DAY);
+  assert.equal(x.stats.increased, false);
+  assert.equal(x.stats.breaches.length, 0);
+  assert.equal(x.internal.level, "GREEN");
+});
+test("v1.1 larger lot with higher-than-permitted risk after a loss is a violation", () => {
+  const s = account();
+  s.rules.tony.trades = 5;
+  s.trades = [
+    trade({ lot: 0.2, risk: 250, pnl: -250 }),
+    trade({
+      id: "T2",
+      open: DAY + "T10:00:00.000Z",
+      close: null,
+      lot: 0.35,
+      risk: 300,
+    }),
+  ];
+  const x = C.snapshot(s, DAY);
+  assert.equal(x.stats.increased, true);
+  assert.equal(x.stats.breaches.length, 1);
+  assert.equal(x.internal.level, "STOP");
+});
+test("v1.1 risk escalation after a loss is detected even with a smaller lot", () => {
+  const s = account();
+  s.rules.tony.trades = 5;
+  s.trades = [
+    trade({ lot: 0.2, pnl: -250 }),
+    trade({
+      id: "T2",
+      open: DAY + "T10:00:00.000Z",
+      close: null,
+      lot: 0.1,
+      risk: 300,
+    }),
+  ];
+  assert.equal(C.snapshot(s, DAY).stats.increased, true);
+});
+test("v1.1 increasing risk within the allowed ceiling is not inferred as revenge", () => {
+  const s = account();
+  s.rules.tony.trades = 5;
+  s.trades = [
+    trade({ risk: 100, pnl: -100 }),
+    trade({
+      id: "T2",
+      open: DAY + "T10:00:00.000Z",
+      close: null,
+      lot: 0.35,
+      risk: 250,
+    }),
+  ];
+  assert.equal(C.snapshot(s, DAY).stats.increased, false);
+});
+test("v1.1 exceeding the previous allowed ceiling after a loss is escalation even if the new setup permits it", () => {
+  const s = account();
+  s.rules.tony.trades = 5;
+  s.rules.tony.maxRisk = 0.5;
+  s.rules.tony.allowPlus = true;
+  s.trades = [
+    trade({ grade: "A", pnl: -250 }),
+    trade({
+      id: "T2",
+      grade: "A+",
+      open: DAY + "T10:00:00.000Z",
+      close: null,
+      risk: 500,
+    }),
+  ];
+  const x = C.snapshot(s, DAY);
+  assert.equal(x.stats.breaches.length, 0);
+  assert.equal(x.stats.increased, true);
+});
+test("v1.1 worst daily usage preserves the intraday loss after recovery", () => {
+  const x = snap({ equity: 100000, lowest: 94999 });
+  assert.equal(x.dailyUsed, 0);
+  assert.equal(x.worstEquityToday, 94999);
+  assert.equal(x.worstDailyLossUsed, 5001);
+  assert.ok(Math.abs(x.worstDailyUsed - 100.02) < 1e-10);
+  assert.equal(x.dailyViolation, true);
+});
+test("v1.1 worst usage uses current equity when it is below the recorded low", () => {
+  const x = snap({ equity: 97000, lowest: 98000 });
+  assert.equal(x.worstEquityToday, 97000);
+  assert.equal(x.worstDailyLossUsed, 3000);
+  assert.equal(x.worstDailyUsed, 60);
+  assert.equal(x.dailyViolation, false);
+});
+test("v1.1 absent lowest falls back to current equity and keeps incomplete-coverage warning", () => {
+  const x = snap({ equity: 99000, lowest: null });
+  assert.equal(x.worstEquityToday, 99000);
+  assert.equal(x.worstDailyUsed, x.dailyUsed);
+  assert.equal(x.coverage, false);
+});
+test("v1.1 worst daily usage is zero when both equity samples exceed midnight balance", () => {
+  const x = snap({ equity: 102000, lowest: 101000 });
+  assert.equal(x.dailyUsed, 0);
+  assert.equal(x.worstDailyUsed, 0);
+});
+test("v1.1 Free Trial day 1, day 14 and expiration use calendar dates", () => {
+  assert.deepEqual(
+    C.calculateFreeTrialCountdown("2026-10-09", "Free Trial", "2026-10-09"),
+    { day: 1, totalDays: 14, remaining: 13, expired: false, started: true },
+  );
+  assert.deepEqual(
+    C.calculateFreeTrialCountdown("2026-10-09", "Free Trial", "2026-10-22"),
+    { day: 14, totalDays: 14, remaining: 0, expired: false, started: true },
+  );
+  const expired = C.calculateFreeTrialCountdown(
+    "2026-10-09",
+    "Free Trial",
+    "2026-10-23",
+  );
+  assert.equal(expired.day, 15);
+  assert.equal(expired.remaining, 0);
+  assert.equal(expired.expired, true);
+});
+test("v1.1 countdown uses Prague date instead of UTC or Bangkok date", () => {
+  const x = C.calculateFreeTrialCountdown(
+    "2026-10-09",
+    "Free Trial",
+    "2026-10-09T22:30:00Z",
+  );
+  assert.equal(x.day, 2);
+  const y = C.calculateFreeTrialCountdown(
+    "2026-10-09",
+    "Free Trial",
+    "2026-10-09T21:30:00Z",
+  );
+  assert.equal(y.day, 1);
+});
+test("v1.1 countdown counts 23-hour spring and 25-hour autumn DST days as calendar days", () => {
+  assert.equal(
+    C.calculateFreeTrialCountdown("2026-03-28", "Free Trial", "2026-03-30").day,
+    3,
+  );
+  assert.equal(
+    C.calculateFreeTrialCountdown("2026-10-24", "Free Trial", "2026-10-26").day,
+    3,
+  );
+});
+test("v1.1 countdown includes weekends, handles a future start and is absent in other phases", () => {
+  assert.equal(
+    C.calculateFreeTrialCountdown("2026-10-09", "Free Trial", "2026-10-12").day,
+    4,
+  );
+  assert.deepEqual(
+    C.calculateFreeTrialCountdown("2026-10-10", "Free Trial", "2026-10-09"),
+    { day: 0, totalDays: 14, remaining: 14, expired: false, started: false },
+  );
+  for (const phase of ["Challenge", "Verification", "FTMO Account"])
+    assert.equal(C.calculateFreeTrialCountdown(DAY, phase, DAY), null);
+});
+test("v1.1 Trial expiration does not create a loss-rule violation or Tony STOP", () => {
+  const s = account();
+  s.daily = [day({ date: "2026-10-23" })];
+  const x = C.snapshot(s, "2026-10-23");
+  assert.equal(x.trial.expired, true);
+  assert.equal(x.violation, false);
+  assert.equal(x.internal.level, "GREEN");
+  assert.equal(x.ftmoStatus, "SAFE");
+  assert.deepEqual(x.events, []);
+});
+test("v1.1 preserves FTMO default rules, formulas and schema-1 backups without migration", () => {
+  const rules = C.defaults().rules.phases;
+  assert.deepEqual(rules, {
+    "Free Trial": { target: 5, days: 2, daily: 5, max: 10 },
+    Challenge: { target: 10, days: 4, daily: 5, max: 10 },
+    Verification: { target: 5, days: 4, daily: 5, max: 10 },
+    "FTMO Account": { target: null, days: null, daily: 5, max: 10 },
+  });
+  const s = account();
+  const before = JSON.stringify(s);
+  assert.equal(C.APP_VERSION, "1.1");
+  assert.equal(s.version, 1);
+  assert.equal(C.dailyFloor(102000, 100000, 5), 97000);
+  assert.equal(C.calculateMaximumLossLimit(100000, 10), 90000);
+  assert.deepEqual(S.validate(JSON.parse(before)), s);
+  C.snapshot(s, DAY);
+  assert.equal(JSON.stringify(s), before);
 });

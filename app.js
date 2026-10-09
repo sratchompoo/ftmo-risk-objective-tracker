@@ -130,6 +130,9 @@ function dashboard() {
       `<div class="reset-time"><span class="badge ${s.ftmoStatus === "RULE VIOLATION" ? "RULE" : s.ftmoStatus}">${s.ftmoStatus}</span><p>FTMO reset วันนี้: ${fmtTime(C.resetInstant(today()))}<br>${esc(state.account.timezone)} · 00:00 Europe/Prague</p></div>`,
     ) +
     warnings(s) +
+    (s.trial
+      ? `<div class="panel"><div class="actions"><strong>Free Trial Day ${s.trial.day} / 14</strong><span class="muted">Calendar Days Remaining: ${s.trial.remaining} · นับวัน Europe/Prague</span></div>${s.trial.expired ? '<p class="negative">Free Trial ครบ 14 วันแล้ว — ไม่ใช่ FTMO Loss Rule Violation</p>' : !s.trial.started ? '<p class="muted">ยังไม่ถึง Account Start Date</p>' : ""}</div>`
+      : "") +
     `<div class="metrics">${[
       ["Current Balance", money(s.balance)],
       ["Current Equity", money(s.equity)],
@@ -164,10 +167,17 @@ function dashboard() {
       s.rule.days ? (s.tradingDays / s.rule.days) * 100 : null,
     ) +
     card(
-      "FTMO Daily Loss Usage",
+      "Current Daily Loss Usage",
       pct(s.dailyUsed),
       `<span>Used ${money(Math.max(0, s.d.midnight - s.equity))}</span><span>/ ${money(s.dailyAmount)}</span>`,
       s.dailyUsed,
+      s.dailyViolation,
+    ) +
+    card(
+      "Worst Daily Loss Usage Today",
+      pct(s.worstDailyUsed),
+      `<span>Used ${money(s.worstDailyLossUsed)}</span><span>Worst Equity ${money(s.worstEquityToday)}${s.d.lowest === null ? " (ไม่มี Lowest Intraday)" : ""}</span>`,
+      s.worstDailyUsed,
       s.dailyViolation,
     ) +
     card(
@@ -211,7 +221,7 @@ function dashboard() {
         ["พัก 1 trading day / Review 10 trades", pct(t.pause)],
         ["Full Review Required", pct(t.review)],
       ],
-    )}<p class="muted">ใช้เกณฑ์ที่เข้มกว่าระหว่าง Drawdown จาก Initial และ Peak · No Martingale / No Averaging Loss / No Revenge Trading / No increasing Lot after Loss</p></div><div class="panel"><h2>Daily Planning Summary</h2>${summary(
+    )}<p class="muted">ใช้เกณฑ์ที่เข้มกว่าระหว่าง Drawdown จาก Initial และ Peak · No Martingale / No Averaging Loss / No Revenge Trading / No Increasing Risk after Loss</p></div><div class="panel"><h2>Daily Planning Summary</h2>${summary(
       [
         ["FTMO Status", s.ftmoStatus],
         ["Lowest Equity Today", money(s.d.lowest)],
@@ -544,7 +554,7 @@ function daily() {
     check("Opened New Position Today?", "opened", d.opened) +
     check("All Positions Closed?", "closed", d.closed) +
     check(
-      "Tony Rule Violation (Martingale / Averaging / Revenge / เพิ่ม Lot)",
+      "Tony Rule Violation (Martingale / Averaging / Revenge / เพิ่ม Risk)",
       "internalViolation",
       d.internalViolation,
     ) +
@@ -781,14 +791,14 @@ function planner() {
       'required min="0.00000001"',
     ) +
     field(
-      "Extra Cost / Slippage Reserve $",
+      "Estimated Trading Cost $",
       "cost",
       0,
       "number",
-      "เผื่อ Commission / Swap / Slippage ของ Trade ใหม่",
+      "รวม Commission / Swap / Slippage ภายใน Total Risk Budget",
       'required min="0"',
     ) +
-    `</div></form><div id="projection" class="panel" aria-live="polite"></div></div><div class="panel"><h2>Position Size Formula</h2><div class="formula">Risk $ = Initial Capital × Risk % / 100<br>Lot Size = Risk $ ÷ (Stop Loss Distance ÷ Tick Size × Tick Value)<br>Projected Equity = Current Equity − Risk $ − Extra Cost Reserve</div><p class="muted">เป็นการจำลอง ไม่รับประกันราคา Fill หรือ Slippage · การปัดลงลด Risk แต่ Buffer ใช้ Risk ที่เสนอเต็มจำนวนเพื่อความระมัดระวัง · หากชน Tony Stop แสดง DO NOT TRADE แม้ยังไม่ชน FTMO Floor</p></div>`
+    `</div></form><div id="projection" class="panel" aria-live="polite"></div></div><div class="panel"><h2>Position Size Formula</h2><div class="formula">Total Risk Budget = Initial Capital × Risk % / 100<br>Price Risk Budget = Total Risk Budget − Estimated Trading Cost<br>Lot Size = Price Risk Budget ÷ (Stop Loss Distance ÷ Tick Size × Tick Value)<br>Projected Equity = Current Equity − Total Risk Budget</div><p class="muted">เป็นการจำลอง ไม่รับประกันราคา Fill หรือ Slippage · การปัดลงลด Risk แต่ Buffer ใช้ Risk ที่เสนอเต็มจำนวนเพื่อความระมัดระวัง · หากชน Tony Stop แสดง DO NOT TRADE แม้ยังไม่ชน FTMO Floor</p></div>`
   );
 }
 function updateProjection() {
@@ -818,7 +828,9 @@ function updateProjection() {
   $("#projection").innerHTML =
     `<div class="eyebrow">PROJECTED IF STOP LOSS HIT</div><h2 class="${p.allowed ? "positive" : "negative"}">${p.allowed ? "WITHIN RISK PLAN" : "DO NOT TRADE"}</h2><p class="${p.allowed ? "muted" : "negative"}">${p.reasons.map(esc).join(" · ") || "Buffer อยู่ในกฎที่ตั้งไว้ ตรวจสอบ Contract และแผนก่อนส่ง Order"}</p>${summary(
       [
-        ["Risk Proposed", money(p.amount)],
+        ["Total Risk Budget", money(p.totalRiskBudget)],
+        ["Estimated Trading Cost (รวมใน Budget)", money(p.estimatedCost)],
+        ["Price Risk Budget", money(p.priceRiskBudget)],
         [
           "Position Size (lot, ปัดลง)",
           p.lots === null ? "—" : p.lots.toFixed(6),
